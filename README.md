@@ -31,3 +31,18 @@ Run a social-choice synthetic experiment end-to-end:
 	--seed 0 \
 	--output-json results_social_choice.json
 ```
+
+Run using a YAML config (recommended for reproducibility/auditing):
+
+```bash
+/home/lotanamit/miniconda3/envs/env/bin/python scripts/run_social_choice_experiment.py \
+	--config configs/light/social_choice_light.yml
+```
+
+CLI arguments override values from the config file, for example:
+
+```bash
+/home/lotanamit/miniconda3/envs/env/bin/python scripts/run_social_choice_experiment.py \
+	--config configs/light/social_choice_light.yml \
+	--rounds 10
+```

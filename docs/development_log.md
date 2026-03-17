@@ -33,3 +33,7 @@ Added optional tqdm-backed progress bars for both asymptotic and criteria phases
 ## Step 6 - Personalized Choice Path
 
 Implemented a personalized-choice criterion (Eq. 6 style certainty approximation), deterministic per-agent ranking prediction APIs, and personalized evaluation/asymptotic routines with seed-stability tests. This maps to paper Sections 3.2 and 6.2 by adding agent-specific preference quality evaluation and prepares the codebase for proposal Experiment 2 analysis of persona-dependent rank reversals.
+
+## Stage A - Reproduction Config Presets and Guardrails
+
+Implemented config-first experiment execution via `--config` YAML with strict key/type validation, CLI override precedence, reproducibility config files under `configs/repro/`, and regression tests for config loading/validation/output path behavior. This establishes an auditable, professor-friendly guardrail for paper-reproduction runs and provides a deterministic execution matrix that we will use in subsequent reproduction stages.

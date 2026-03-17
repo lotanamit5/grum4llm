@@ -1,0 +1,15 @@
+mode: both
+agent_counts: [5, 10]
+repeats: 1
+rounds: 4
+seed: 0
+iterations: 2
+gibbs_samples: 10
+gibbs_burnin: 5
+sigma: 1.0
+prior_precision: 0.01
+tolerance: 1.0e-5
+random_seed: 0
+quiet: false
+no_progress: false
+output_json: results/repro/social_choice_light.json

@@ -14,6 +14,7 @@ from datetime import datetime, timezone
 from dataclasses import asdict
 from pathlib import Path
 from time import perf_counter
+from typing import Any
 
 ROOT = Path(__file__).resolve().parents[1]
 SRC = ROOT / "src"
@@ -22,6 +23,7 @@ if str(SRC) not in sys.path:
 
 from grums.experiments.benchmark import compare_criteria_social_choice, run_asymptotic_social_choice
 from grums.inference import MCEMConfig
+import yaml
 
 try:
     from tqdm.auto import tqdm
@@ -39,6 +41,66 @@ def _parse_agent_counts(raw: str) -> list[int]:
     return counts
 
 
+DEFAULTS: dict[str, Any] = {
+    "mode": "both",
+    "agent_counts": "10,20,30",
+    "repeats": 3,
+    "rounds": 20,
+    "seed": 0,
+    "iterations": 6,
+    "gibbs_samples": 25,
+    "gibbs_burnin": 12,
+    "sigma": 1.0,
+    "prior_precision": 1e-2,
+    "tolerance": 1e-5,
+    "random_seed": 0,
+    "output_json": "",
+    "quiet": False,
+    "no_progress": False,
+}
+
+
+def _normalize_config(raw: dict[str, Any]) -> dict[str, Any]:
+    allowed = set(DEFAULTS.keys())
+    unknown = set(raw.keys()) - allowed
+    if unknown:
+        raise ValueError(f"Unknown config keys: {sorted(unknown)}")
+
+    normalized = dict(raw)
+    if "agent_counts" in normalized:
+        counts = normalized["agent_counts"]
+        if isinstance(counts, list):
+            normalized["agent_counts"] = ",".join(str(v) for v in counts)
+        elif not isinstance(counts, str):
+            raise ValueError("agent_counts must be a comma-separated string or list of integers")
+
+    if "mode" in normalized and normalized["mode"] not in {"asymptotic", "criteria", "both"}:
+        raise ValueError("mode must be one of: asymptotic, criteria, both")
+
+    for key in ["repeats", "rounds", "seed", "iterations", "gibbs_samples", "gibbs_burnin", "random_seed"]:
+        if key in normalized and not isinstance(normalized[key], int):
+            raise ValueError(f"{key} must be an integer")
+
+    for key in ["sigma", "prior_precision", "tolerance"]:
+        if key in normalized and not isinstance(normalized[key], (float, int)):
+            raise ValueError(f"{key} must be numeric")
+
+    for key in ["quiet", "no_progress"]:
+        if key in normalized and not isinstance(normalized[key], bool):
+            raise ValueError(f"{key} must be boolean")
+
+    return normalized
+
+
+def _load_config_file(path: str) -> dict[str, Any]:
+    loaded = yaml.safe_load(Path(path).read_text(encoding="utf-8"))
+    if loaded is None:
+        return {}
+    if not isinstance(loaded, dict):
+        raise ValueError("Config file must contain a YAML mapping")
+    return _normalize_config(loaded)
+
+
 def _utc_now_iso() -> str:
     return datetime.now(timezone.utc).isoformat(timespec="seconds")
 
@@ -48,26 +110,35 @@ def _log(enabled: bool, message: str) -> None:
         print(f"[{_utc_now_iso()}] {message}", file=sys.stderr, flush=True)
 
 
-def main() -> None:
+def main(argv: list[str] | None = None) -> None:
+    pre = argparse.ArgumentParser(add_help=False)
+    pre.add_argument("--config", type=str, default="", help="Path to YAML run config")
+    pre_args, _ = pre.parse_known_args(argv)
+
+    defaults = dict(DEFAULTS)
+    if pre_args.config:
+        defaults.update(_load_config_file(pre_args.config))
+
     parser = argparse.ArgumentParser(description="Run synthetic social-choice GRUM experiments.")
-    parser.add_argument("--mode", choices=["asymptotic", "criteria", "both"], default="both")
-    parser.add_argument("--agent-counts", default="10,20,30")
-    parser.add_argument("--repeats", type=int, default=3)
-    parser.add_argument("--rounds", type=int, default=20)
-    parser.add_argument("--seed", type=int, default=0)
+    parser.add_argument("--config", type=str, default=pre_args.config, help="Path to YAML run config")
+    parser.add_argument("--mode", choices=["asymptotic", "criteria", "both"], default=defaults["mode"])
+    parser.add_argument("--agent-counts", default=defaults["agent_counts"])
+    parser.add_argument("--repeats", type=int, default=defaults["repeats"])
+    parser.add_argument("--rounds", type=int, default=defaults["rounds"])
+    parser.add_argument("--seed", type=int, default=defaults["seed"])
 
-    parser.add_argument("--iterations", type=int, default=6)
-    parser.add_argument("--gibbs-samples", type=int, default=25)
-    parser.add_argument("--gibbs-burnin", type=int, default=12)
-    parser.add_argument("--sigma", type=float, default=1.0)
-    parser.add_argument("--prior-precision", type=float, default=1e-2)
-    parser.add_argument("--tolerance", type=float, default=1e-5)
-    parser.add_argument("--random-seed", type=int, default=0)
+    parser.add_argument("--iterations", type=int, default=defaults["iterations"])
+    parser.add_argument("--gibbs-samples", type=int, default=defaults["gibbs_samples"])
+    parser.add_argument("--gibbs-burnin", type=int, default=defaults["gibbs_burnin"])
+    parser.add_argument("--sigma", type=float, default=defaults["sigma"])
+    parser.add_argument("--prior-precision", type=float, default=defaults["prior_precision"])
+    parser.add_argument("--tolerance", type=float, default=defaults["tolerance"])
+    parser.add_argument("--random-seed", type=int, default=defaults["random_seed"])
 
-    parser.add_argument("--output-json", type=str, default="")
-    parser.add_argument("--quiet", action="store_true", help="Disable progress logs.")
-    parser.add_argument("--no-progress", action="store_true", help="Disable tqdm progress bars.")
-    args = parser.parse_args()
+    parser.add_argument("--output-json", type=str, default=defaults["output_json"])
+    parser.add_argument("--quiet", action="store_true", default=bool(defaults["quiet"]), help="Disable progress logs.")
+    parser.add_argument("--no-progress", action="store_true", default=bool(defaults["no_progress"]), help="Disable tqdm progress bars.")
+    args = parser.parse_args(argv)
 
     log_enabled = not args.quiet
     run_start = perf_counter()
@@ -85,6 +156,7 @@ def main() -> None:
 
     payload: dict[str, object] = {
         "config": asdict(cfg),
+        "config_file": args.config if args.config else None,
         "seed": args.seed,
         "repeats": args.repeats,
         "started_at_utc": _utc_now_iso(),
@@ -202,7 +274,9 @@ def main() -> None:
     print(text)
 
     if args.output_json:
-        Path(args.output_json).write_text(text + "\n", encoding="utf-8")
+        output_path = Path(args.output_json)
+        output_path.parent.mkdir(parents=True, exist_ok=True)
+        output_path.write_text(text + "\n", encoding="utf-8")
         _log(log_enabled, f"Results written to {args.output_json}")
 
 

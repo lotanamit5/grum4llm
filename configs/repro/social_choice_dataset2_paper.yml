@@ -1,0 +1,15 @@
+mode: both
+agent_counts: [10, 20, 30, 40, 50]
+repeats: 3
+rounds: 30
+seed: 1
+iterations: 6
+gibbs_samples: 25
+gibbs_burnin: 12
+sigma: 1.0
+prior_precision: 0.01
+tolerance: 1.0e-5
+random_seed: 0
+quiet: false
+no_progress: false
+output_json: results/repro/social_choice_dataset2_paper.json
