@@ -13,3 +13,7 @@ Implemented a first MC-EM inference engine for the Normal-family GRUM path with 
 ## Step 3 - Observed Fisher Information and Elicitation Criteria
 
 Implemented Normal-family observed/candidate Fisher information utilities and a criterion layer containing D-optimality, E-optimality, and the social-choice certainty criterion aligned with Equation (5). This maps to the paper's Section 4.3 and Table 1 (information-based elicitation scoring) and supports the proposal's Experiment 1 framing by making intrinsic preference uncertainty explicitly measurable and optimizable.
+
+## Step 4 - Adaptive Elicitation Engine (Provider-Agnostic)
+
+Implemented an Algorithm-1 style adaptive elicitation engine that iterates MAP fitting, precision update, criterion-based candidate scoring, and provider query/update steps while keeping all data acquisition behind the `PreferenceProvider` contract. This maps to paper Section 3's iterative elicitation loop and to the proposal requirement that GRUM logic remain decoupled from the elicitation source (human/simulation/LLM) while enabling persona-targeted querying.
