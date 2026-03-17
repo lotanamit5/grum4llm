@@ -1,0 +1,36 @@
+{
+  "config": {
+    "n_iterations": 0,
+    "n_gibbs_samples": 25,
+    "n_gibbs_burnin": 12,
+    "sigma": 1.0,
+    "prior_precision": 0.01,
+    "tolerance": 1e-05,
+    "random_seed": 0
+  },
+  "seed": 0,
+  "repeats": 1,
+  "started_at_utc": "2026-03-17T20:12:21+00:00",
+  "asymptotic": [
+    {
+      "n_agents": 5,
+      "mean_tau": -0.7999999999999999
+    },
+    {
+      "n_agents": 10,
+      "mean_tau": -0.7999999999999999
+    }
+  ],
+  "criteria": {
+    "random": -0.39999999999999997,
+    "d_opt": -0.39999999999999997,
+    "e_opt": -0.39999999999999997,
+    "social": -0.39999999999999997
+  },
+  "timing": {
+    "asymptotic_seconds": 0.002549594995798543,
+    "criteria_seconds": 0.06965550797758624,
+    "total_seconds": 0.07271051499992609
+  },
+  "finished_at_utc": "2026-03-17T20:12:21+00:00"
+}

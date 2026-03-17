@@ -1,0 +1,33 @@
+{
+  "config": {
+    "n_iterations": 0,
+    "n_gibbs_samples": 25,
+    "n_gibbs_burnin": 12,
+    "sigma": 1.0,
+    "prior_precision": 0.01,
+    "tolerance": 1e-05,
+    "random_seed": 0
+  },
+  "seed": 0,
+  "repeats": 3,
+  "asymptotic": [
+    {
+      "n_agents": 10,
+      "mean_tau": 0.06666666666666667
+    },
+    {
+      "n_agents": 20,
+      "mean_tau": 0.06666666666666667
+    },
+    {
+      "n_agents": 30,
+      "mean_tau": 0.06666666666666667
+    }
+  ],
+  "criteria": {
+    "random": 0.06666666666666667,
+    "d_opt": 0.06666666666666667,
+    "e_opt": 0.06666666666666667,
+    "social": 0.06666666666666667
+  }
+}

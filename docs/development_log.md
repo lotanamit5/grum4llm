@@ -21,3 +21,7 @@ Implemented an Algorithm-1 style adaptive elicitation engine that iterates MAP f
 ## Step 5 - Social-Choice Reproduction Harness
 
 Implemented synthetic Dataset 1 and Dataset 2 generators, social-choice Kendall-tau evaluation, and reproducible benchmark runners for asymptotic recovery and criterion comparison against random selection. This maps to paper Section 6.1 (synthetic social-choice experiments and criterion comparisons) and enforces the proposal requirement to validate correctness by replication-style behavior before using GRUM on LLM preference elicitation.
+
+## Step 5.1 - Quick Experiment Entrypoint
+
+Added a lightweight script entrypoint to run the current social-choice synthetic experiments from one command (asymptotic, criteria comparison, or both) with JSON output for downstream plotting/reporting. This is an intentional bridge before a broader experiment CLI refactor and keeps reproducibility aligned with the Step 5 harness while making execution practical for iterative research runs.
