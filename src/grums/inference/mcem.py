@@ -41,6 +41,8 @@ class MCEMInference:
 
     def __init__(self, config: MCEMConfig | None = None) -> None:
         self.config = config or MCEMConfig()
+        if (not np.isfinite(self.config.sigma)) or self.config.sigma <= 0.0:
+            raise ValueError("sigma must be a finite positive value")
         self._rng = np.random.default_rng(self.config.random_seed)
 
     def fit_map(
@@ -104,7 +106,7 @@ class MCEMInference:
 
     def _gibbs_samples_for_agent(self, mean_vec: FloatArray, ranking: tuple[int, ...]) -> FloatArray:
         m = len(ranking)
-        sigma = self.config.sigma
+        sigma = float(self.config.sigma)
 
         ranked_means = [float(mean_vec[a]) for a in ranking]
         for idx in range(1, m):
@@ -122,10 +124,32 @@ class MCEMInference:
             for pos, alt in enumerate(ranking):
                 upper = np.inf if pos == 0 else current[ranking[pos - 1]]
                 lower = -np.inf if pos == m - 1 else current[ranking[pos + 1]]
-                mean = mean_vec[alt]
+                mean = float(mean_vec[alt])
+                if not np.isfinite(mean):
+                    mean = 0.0
+
+                # Guard against numeric degeneracy in long runs (NaNs/inverted bounds).
+                if not np.isfinite(lower):
+                    lower = -np.inf
+                if not np.isfinite(upper):
+                    upper = np.inf
+                if lower >= upper:
+                    lower = mean - 10.0 * sigma
+                    upper = mean + 10.0 * sigma
+
                 a = (lower - mean) / sigma
                 b = (upper - mean) / sigma
-                current[alt] = truncnorm.rvs(a, b, loc=mean, scale=sigma, random_state=self._rng)
+
+                try:
+                    sample = truncnorm.rvs(a, b, loc=mean, scale=sigma, random_state=self._rng)
+                except ValueError:
+                    sample = mean
+                    if np.isfinite(lower):
+                        sample = max(sample, lower)
+                    if np.isfinite(upper):
+                        sample = min(sample, upper)
+
+                current[alt] = float(sample)
 
             if t >= self.config.n_gibbs_burnin:
                 collected.append(current.copy())
