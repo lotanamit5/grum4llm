@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
+from typing import Callable
 
 import numpy as np
 
@@ -60,6 +61,7 @@ def run_asymptotic_social_choice(
     repeats: int = 3,
     seed: int = 0,
     mcem_config: MCEMConfig | None = None,
+    progress_update: Callable[[int], None] | None = None,
 ) -> list[AsymptoticPoint]:
     """Run social-choice recovery vs number of observed agents.
 
@@ -83,6 +85,8 @@ def run_asymptotic_social_choice(
                 alternative_features=data.alternative_features,
             )
             taus.append(social_choice_kendall_tau(data.params_true.delta, fit.params.delta))
+            if progress_update is not None:
+                progress_update(1)
 
         points.append(AsymptoticPoint(n_agents=n, mean_tau=float(np.mean(taus))))
 
@@ -94,6 +98,7 @@ def compare_criteria_social_choice(
     repeats: int = 3,
     seed: int = 0,
     mcem_config: MCEMConfig | None = None,
+    progress_update: Callable[[int], None] | None = None,
 ) -> dict[str, float]:
     """Compare social-choice quality after adaptive elicitation by criterion.
 
@@ -142,5 +147,7 @@ def compare_criteria_social_choice(
             )
             tau = social_choice_kendall_tau(data.params_true.delta, result.final_params.delta)
             out[name].append(tau)
+            if progress_update is not None:
+                progress_update(n_rounds)
 
     return {k: float(np.mean(v)) for k, v in out.items()}

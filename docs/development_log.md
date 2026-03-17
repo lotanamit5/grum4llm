@@ -25,3 +25,7 @@ Implemented synthetic Dataset 1 and Dataset 2 generators, social-choice Kendall-
 ## Step 5.1 - Quick Experiment Entrypoint
 
 Added a lightweight script entrypoint to run the current social-choice synthetic experiments from one command (asymptotic, criteria comparison, or both) with JSON output for downstream plotting/reporting. This is an intentional bridge before a broader experiment CLI refactor and keeps reproducibility aligned with the Step 5 harness while making execution practical for iterative research runs.
+
+## Step 5.3 - Runtime Progress Bars
+
+Added optional tqdm-backed progress bars for both asymptotic and criteria phases, wired through benchmark progress callbacks so we can track unit completion during long runs and better estimate resource requirements. This complements Step 5 timing instrumentation by providing live visibility into run advancement and helps decide whether to stay on local CPU or move to larger compute resources.

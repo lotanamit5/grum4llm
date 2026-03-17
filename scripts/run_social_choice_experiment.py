@@ -23,6 +23,11 @@ if str(SRC) not in sys.path:
 from grums.experiments.benchmark import compare_criteria_social_choice, run_asymptotic_social_choice
 from grums.inference import MCEMConfig
 
+try:
+    from tqdm.auto import tqdm
+except Exception:  # pragma: no cover - fallback if tqdm is unavailable
+    tqdm = None
+
 
 def _parse_agent_counts(raw: str) -> list[int]:
     parts = [p.strip() for p in raw.split(",") if p.strip()]
@@ -61,6 +66,7 @@ def main() -> None:
 
     parser.add_argument("--output-json", type=str, default="")
     parser.add_argument("--quiet", action="store_true", help="Disable progress logs.")
+    parser.add_argument("--no-progress", action="store_true", help="Disable tqdm progress bars.")
     args = parser.parse_args()
 
     log_enabled = not args.quiet
@@ -98,12 +104,24 @@ def main() -> None:
             ),
         )
         t0 = perf_counter()
+        asym_total_units = len(counts) * args.repeats
+        asym_bar = None
+        if not args.no_progress and tqdm is not None:
+            asym_bar = tqdm(total=asym_total_units, desc="Asymptotic", unit="unit")
+
+        def _asym_update(delta: int) -> None:
+            if asym_bar is not None:
+                asym_bar.update(delta)
+
         points = run_asymptotic_social_choice(
             agent_counts=counts,
             repeats=args.repeats,
             seed=args.seed,
             mcem_config=cfg,
+            progress_update=_asym_update,
         )
+        if asym_bar is not None:
+            asym_bar.close()
         asym_seconds = perf_counter() - t0
         timing["asymptotic_seconds"] = asym_seconds
         payload["asymptotic"] = [asdict(p) for p in points]
@@ -126,12 +144,24 @@ def main() -> None:
             ),
         )
         t0 = perf_counter()
+        criteria_total_units = args.rounds * args.repeats * 4
+        criteria_bar = None
+        if not args.no_progress and tqdm is not None:
+            criteria_bar = tqdm(total=criteria_total_units, desc="Criteria", unit="round")
+
+        def _criteria_update(delta: int) -> None:
+            if criteria_bar is not None:
+                criteria_bar.update(delta)
+
         scores = compare_criteria_social_choice(
             n_rounds=args.rounds,
             repeats=args.repeats,
             seed=args.seed,
             mcem_config=cfg,
+            progress_update=_criteria_update,
         )
+        if criteria_bar is not None:
+            criteria_bar.close()
         criteria_seconds = perf_counter() - t0
         timing["criteria_seconds"] = criteria_seconds
         payload["criteria"] = scores

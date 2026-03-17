@@ -1,0 +1,36 @@
+{
+  "config": {
+    "n_iterations": 2,
+    "n_gibbs_samples": 10,
+    "n_gibbs_burnin": 5,
+    "sigma": 1.0,
+    "prior_precision": 0.01,
+    "tolerance": 1e-05,
+    "random_seed": 0
+  },
+  "seed": 0,
+  "repeats": 1,
+  "started_at_utc": "2026-03-17T20:18:13+00:00",
+  "asymptotic": [
+    {
+      "n_agents": 5,
+      "mean_tau": 0.9999999999999999
+    },
+    {
+      "n_agents": 10,
+      "mean_tau": 0.7999999999999999
+    }
+  ],
+  "criteria": {
+    "random": 0.6,
+    "d_opt": 0.6,
+    "e_opt": 0.7999999999999999,
+    "social": 0.0
+  },
+  "timing": {
+    "asymptotic_seconds": 0.7078774260007776,
+    "criteria_seconds": 1.9529691429925151,
+    "total_seconds": 2.66125470699626
+  },
+  "finished_at_utc": "2026-03-17T20:18:16+00:00"
+}
