@@ -1,0 +1,230 @@
+\section{Paper Summary}
+
+\subsection{
+    Paper title and authors, where was it published?
+}
+
+The paper \textit{Preference Elicitation For General Random Utility Models} by Hossein Azari Soufiani, David C. Parkes, and Lirong Xia (SEAS, Harvard University) was published in AUAI 2013 (Association for Uncertainty in Artificial Intelligence).
+
+\subsection{
+    What is the topic of the paper?
+    What is the main claim?
+    How does this relate to the material we studied in the course?
+}
+
+The paper focuses on \textit{Preference Elicitation} within the framework of \textit{General Random Utility Models} (GRUMs).
+The main claim of the paper is that its proposed adaptive elicitation scheme increases the precision of preference estimation in GRUMs.
+
+This paper relates to the topic of \textit{Truth Discovery}, covered in later parts of the course.
+Similar to the \textit{Mallows Model} learned in class, this paper's model assumes that agents' observed preferences are noisy signals generated from an underlying ground truth.
+However, both models differ in the parametric assumptions they make and the form of their ground truth.
+The Mallows Model assumes a \textbf{single} global ground truth preference, and the noise is \textbf{distance-based} from the ground truth (higher noise means the observed preference is more distant from the ground truth).
+The GRUM model is \textbf{utility-based}, and assumes that utilities are influenced by the features of both agents and alternatives, meaning that each pair of agent and item has a unique ground truth utility, with the addition of an independent noise term.
+
+\subsection{
+    What are the main 1-2 theoretical results in the paper?
+    Why do you see them as the main results?
+    Write them down as formally as possible, with all the required definitions
+}
+
+\begin{definition}[General Random Utility Model - GRUM]
+    Let $\mathcal{C}=\{ c_{1},\dots,c_{m} \}$ be a set of alternatives and a set of agents indexed by $i \in \{ 1,\dots,n \}$.
+    For every agent $i$ and alternative $j$, the utility $u_{ij}$ is defined as:
+    $$
+    u_{ij} = \delta_{j} + \vec{x}_{i} B \vec{z}^{\top}_{j} + \epsilon_{ij}
+    $$
+    Where:
+    \begin{itemize}
+        \item $x_{i} \in \mathbb{R}^K$ and $z_{j} \in \mathbb{R}^L$ are observed attribute vectors for agent $i$ and alternative $j$ (correspondingly).
+        \item $\Theta=(\delta,B)$ are the parameters to be estimated.
+        \begin{itemize}
+        	\item $\delta \in \mathbb{R}^{m}$ is the vector of intrinsic utilities.
+        	\item $B \in \mathbb{R}^{K \times L}$ is the vector intersection matrix.
+        \end{itemize}
+    	\item $\epsilon_{ij}$ is a random noise term.
+        \item Denote the deterministic term as $\mu_{ij} = \delta_{j} + \vec{x}_{i} B \vec{z}^{\top}_{j}$.
+    \end{itemize}
+\end{definition}
+
+\begin{definition}[Preference Data]
+    Let $D = \{ \pi_{1},\dots,\pi_{n} \}$ be the set of observed rankings,
+    where $\pi_{i}$ represents the full ranking of agent $i$ such that $c_{\pi_{i}(1)} \succ_{i} \cdots \succ_{i} c_{\pi_{i}(m)}$.
+\end{definition}
+
+\begin{definition}[Identifiability]
+    The linear model describing the deterministic utility, $\mu_{ij} = \delta_{j} + \vec{x}_{i} B \vec{z}^{\top}_{j}$, in terms of parameters $\Theta$ is \textit{identifiable} if the mapping from parameters to utilities is injective (one-to-one).
+    That is, distinct parameters yield distinct deterministic utilities.
+\end{definition}
+
+\begin{definition}[Location Family Assumption]
+    The noise terms $\epsilon_{ij}$ are drawn from a distribution where the probability density function is log-concave (e.g., Gumbel or Normal).
+\end{definition}
+
+\begin{theorem}[Global Optimality] \label{thm:global_optimality}
+For the location family, if for every $i \leq n$ the joint probability density function for $\vec{\epsilon}_i$ and the prior $\mathrm{Pr}(\Theta)$ are log-concave, 
+then  $\mathrm{Pr}(\Theta \mid D)$ is concave up to a known transformation.
+\end{theorem}
+
+\begin{note}
+By \textit{up to a known transformation}, the authors meant that the posterior is log-concave (the "known transformation" is the natural logarithm function).
+Also, the original Theorem \ref{thm:global_optimality} from the paper had a typo; it should have been \textit{every $i \leq n$} instead of \textit{every $j \leq m$} because we require that each agent's noise vector is drawn from a log-concave distribution.
+\end{note}
+
+\begin{remark}
+    Standard Expectation-Maximization (EM) algorithms suffer from the problem of getting stuck in local minima.
+    Theorem \ref{thm:global_optimality} guarantees that the posterior is unimodal, ensuring that gradient-based inference methods will converge to the global maximum.
+    In short, the theorem ensures the answer is \textbf{correct}.
+\end{remark}
+
+\begin{condition}[Connectivity]
+\label{cond:connectivity}
+    Given the data $D$, in every partition of the alternatives $C$ into two non-empty subsets $C_{1} \cup C_{2}$, 
+    there exists $c_{1}\in C_{1}$ and $c_{2} \in C_{2}$ such that there is at least one ranking in $D$ where $c_{1} \succ c_{2}$.    
+\end{condition}
+
+\begin{theorem}[Boundedness of Solutions] \label{thm:boundedness_of_solutions}
+    Suppose we fix $\mu_{11} = 0$.
+    Then the set $S_{D}$ of global maxima solutions to $\mathrm{Pr}(\Theta \mid D)$ is bounded in $\Theta$ if and only if the data $D$ satisfies Condition \ref{cond:connectivity} 
+    and the linear model describing $\mu$ in terms of $\Theta$ is identifiable.
+\end{theorem}
+
+\begin{remark}
+    Theorem \ref{thm:boundedness_of_solutions} provides the necessary and sufficient conditions to ensure the solution set is bounded (see Fig. \ref{fig:fig1}).
+    It generalizes Ford's condition for Plackett-Luce (\cite{ford1957solution}) to the broader class of GRUMs.
+    In short, the theorem ensures the answer is \textbf{computable}.
+\end{remark}
+
+\subsection{
+    Explain the outline of the proof in 2-3 paragraphs.
+}
+
+The original paper omitted the proofs for the theorem, and I was unable to find a version of the paper with the appendix of the proofs.
+After contacting the authors, they referred me to the Phd thesis of the main author (\cite{soufiani2014revisiting}).
+Theorems 1 and 2 in the thesis can be generalized to prove the above theorems (correspondingly).
+
+\begin{proof}[Proof of Theorem \ref{thm:global_optimality}]
+    Theorem \ref{thm:global_optimality} is proved by applying the following lemma:
+    \begin{lemma} \label{lem:1}
+        Let $R \in \mathbb{R}$. Suppose $g_{1}(\vec{\Theta},\vec{\epsilon}),\dots,g_{R}(\vec{\Theta},\vec{\epsilon})$ are concave functions in $\mathbb{R}^{m(2n+1)}$ where $\vec{\Theta}$ is the vector of $m+mn$ parameters and $\vec{\epsilon}$ is a vector of $mn$ real numbers that are generated according to a distribution whose pdf is logarithmic concave in $\mathbb{R}^{mn}$. Then the following function is log-concave in $\mathbb{R}^{m}$:
+        \begin{equation*}
+        L_{i} (\vec{\Theta},G) =
+        \mathrm{Pr} \left[
+          g_{1}(\vec{\Theta},\vec{\epsilon}) \geq 0,\dots,g_{R}(\vec{\Theta},\vec{\epsilon}) \geq 0
+        \right],\quad 
+        \vec{\Theta} \in \mathbb{R}^{m(n+1)}
+        \end{equation*}
+    \end{lemma}
+    
+    A ranking $\pi_{i}$ implies that the item at rank $r$, denoted $j=\pi_{i}(r)$, is preferred to the item at rank $r+1$denoted $k=\pi_{i}(r+1)$.
+    This means the utility of the higher-ranked item is greater:
+    $$
+    U_{\pi_{i}(r)} \geq  U_{\pi_{i}(r+1)}
+    $$
+    We can substitute this with the GRUM definition:
+    $$
+    \delta_{j} + x_{i} B z^{\top}_{j} + \epsilon_{ij} \geq 
+    \delta_{k} + x_{i} B z^{\top}_{k} + \epsilon_{ik}
+    $$
+    Lemma \ref{lem:1} requires the problem to be framed as probability constraints in the format $g(\Theta,\epsilon) \geq 0$.
+    We rearrange the inequality above and define:
+    \begin{align*}
+    g^{i}_{r}(\Theta,\epsilon) 
+    &= U_{\pi_{i}(r)} -  U_{\pi_{i}(r+1)} \\
+    &= \delta_{j} + x_{i} B z^{\top}_{j} + \epsilon_{ij} - 
+    \delta_{k} - x_{i} B z^{\top}_{k} - \epsilon_{ik} \\
+    &= (\delta_{j}- \delta_{k}) + x_{i} B (z_{j} - z_{k})^{\top} + (\epsilon_{ij} - \epsilon_{ik}) \geq 0
+    \end{align*}
+    The function $g^{i}_{r}$ represents the pairwise comparison between rank $r$ and $r+1$.
+    Lemma \ref{lem:1} applies only if the functions $g$ are \textbf{concave}.
+    \begin{itemize}
+        \item It's linear in $\delta$ because its a simple difference.
+        \item It's linear in $B$ because $x,z$ are observed data (constants), so it's the same as multiplying by some constant $C$. 
+    \end{itemize}
+    Since all linear functions are concave, the condition is satisfied.
+    \begin{enumerate}
+        \item The noise $\epsilon$ is assumed to have a \textbf{log-concave PDF} (e.g., Normal or Gumbel).
+        \item The constraints $g$ are concave.
+        \item Therefore, by Lemma \ref{lem:1}, the probability of observing a single ranking $\mathrm{Pr}(\pi_{i}|\Theta)$ is log-concave.
+        \item Since the sum of concave is also concave, the total likelihood, $\mathrm{Pr}(D \mid \Theta)$, is log-concave.
+    \end{enumerate}
+    We also assumed that the prior, $\mathrm{Pr}(\Theta)$, is log-concave.
+    This implies that the posterior, $\mathrm{Pr}(\Theta \mid D) \propto \mathrm{Pr}(D \mid \Theta) \cdot \mathrm{Pr}(\Theta)$, is log-concave.
+\end{proof}
+
+\begin{proof}[Proof of Theorem \ref{thm:boundedness_of_solutions}]
+    Theorem \ref{thm:boundedness_of_solutions}'s proof uses the following lemma:
+    \begin{lemma} \label{lem:2}
+        If alternative $j$ is preferred to alternative $j'$ in at least one ranking then the difference of their mean parameters $\theta_{j'} - \theta_{j}$ is bounded from above ($\exists Q:\theta_{j'}-\theta_{j}<Q$) for all the $\vec{\theta}$ that maximize the likelihood function.
+    \end{lemma}
+    If distinct sets of parameters $\Theta$ and $\Theta'$ yield the exact same utilities $\mu$, the model cannot distinguish between them, and the solution set might be unbounded (e.g., along a line).
+    Additionally, if Condition \ref{cond:connectivity} does not hold, then $S_{D}$ is unbounded because the parameters for all alternatives in $C_{1}$ can be increased simultaneously to improve the log-likelihood.
+    Consider a directed graph $G_{D}$, where the nodes are the alternatives, and there is edge from $c_{j}$ to $c_{j'}$ if in a least one ranking $c_{j} \succ c_{j'}$. By Condition \ref{cond:connectivity}, for any pair $j\neq j'$, there is a path from $c_{j}$ to $c_{j'}$ (and conversely, a path from $c_{j'}$ to $c_{j}$).
+    To see this, consider building a path between $j$ and $j'$ by starting from a partition with $C_{1} = \{ j \}$ and following an edge from $j$ to $j_{1}$ in the graph where $j_{1}$ is an alternative in $C_{2}$ for which there must be such an edge, by Condition \ref{cond:connectivity}.
+    Consider the partition with $C_{1}=\{ j,j_{1} \}$, and repeat until an edge can be followed to vertex $j' \in C_{2}$.
+    It follows from Lemma \ref{lem:2} that for any $\vec{\theta} \in S_{D}$ we have $\left| \theta_{j}  - \theta_{j'} \right| < Qm$, using the telescopic sum of bounded values of the difference of mean parameters along the edges of the path, since the length of the path is no more than $m$ (and tracing the path from $j$ to $j'$ and $j'$ to $j$), meaning that $S_{D}$ is bounded.
+\end{proof}
+
+\subsection{
+    Create a figure/table that is not included in the paper, which can help clarify some of the definitions/results/proofs.
+}
+
+To clarify the implications of Theorem \ref{thm:boundedness_of_solutions}, I generated Figure \ref{fig:fig1},
+which visualizes the relationship between data connectivity (Condition \ref{cond:connectivity}) and the stability of the solution.
+GRUM estimates parameters ($\Theta$) based on the difference in utilities between alternatives.
+If the data violates Condition \ref{cond:connectivity} (as shown in the left graph of Figure \ref{fig:fig1}), 
+the alternatives are partitioned into disconnected sets, for example, $\{A, B\}$ never compete against $\{C\}$.
+Because the model relies on relative comparisons, there is no data to 'anchor' the utility of set $\{C\}$ against the others.
+The contour plot on the bottom left illustrates the consequence of this violation:
+the log-likelihood function forms an 'infinite ridge' rather than a peak.
+The white arrow demonstrates that we can increase the parameter $\theta_C$ indefinitely (shifting it to $+\infty$ or $-\infty$) without changing the likelihood of the observed data.
+This shows that the solution set $S_D$ is unbounded, meaning the algorithm cannot converge to a unique answer.
+In contrast, when the data satisfies Condition \ref{cond:connectivity} (right graph), the comparison graph is strongly connected.
+This connectivity constrains the parameters relative to each other.
+As seen in the bottom right contour plot, this collapses the ridge into a strictly concave function with a single, bounded global maximum (the red dot),
+guaranteeing that the MAP estimate is unique and computable.
+
+\begin{figure}[H]
+    \centering
+    \includegraphics[width=1\linewidth]{fig_alternative.png}
+    \caption{
+    \textbf{Impact of Connectivity on Parameter Estimation.}  
+    Comparison of likelihood landscapes for disconnected vs. connected data.
+    \textbf{(Left)} Data violating Condition \ref{cond:connectivity} leads to an "infinite drift" in the likelihood surface,
+    causing unbounded solutions where parameters cannot be uniquely identified.
+    \textbf{(Right)} Data satisfying Condition \ref{cond:connectivity} (strongly connected graph) ensures a unique, bounded global maximum for the GRUM parameters
+    }
+    Note that $n$ represents "number of wins" in the pairwise comparisons we query; edges may not sum to the same number because we sample the comparisons and not measure all possible pairs.
+    \label{fig:fig1}
+\end{figure}
+
+\subsection{
+    Select one paper cited in your paper as an important paper, and explain (1-2 sentences) why it is cited and why you picked this particular paper.
+}
+
+The paper \textit{Automobile Prices in Market Equilibrium} (\cite{berry1993automobile}) (often referred to as the BLP model) was cited as an important paper because the authors explicitly define GRUMs as a specific case of this influential generative model from econometrics.
+This cite establishes the theoretical foundation of the work, while distinguishing GRUMs as a simplified version that relies only on observed attributes to ensure the computational tractability that the original BLP model lacked.
+
+\subsection{
+    Find (use Google Scholar) one paper citing your paper, and explain why it is cited.
+}
+
+One paper that cites this work is "\textit{Knowledge Elicitation via Sequential Probabilistic Inference for High-Dimensional Prediction}" (\cite{daee2017knowledge}).
+
+It cites this paper as a key example of preference model elicitation, referencing it to contextualize their own method.
+Specifically, they highlight it as a technique where expert knowledge (in the form of preferences) is sequentially queried to refine model parameters, similar to how they propose eliciting feedback to improve high-dimensional regression models.
+
+\subsection{
+    Find another paper that should have been cited in your opinion, but isn’t.
+    Add a sentence to the “related work” part of the paper with the new citation.
+}
+
+\textbf{The paper:}
+\textit{Preference learning with Gaussian processes} (\cite{chu2005preference}), presented in the International Conference of Machine Learning (ICML), 2005.
+
+\textbf{Reason:}
+This paper is a seminal work in probabilistic preference learning.
+It establishes the foundational Bayesian framework for ranking with kernels.
+Citing it would contrast the authors' parametric approach (GRUMs) with the leading non-parametric Bayesian approach (Gaussian Process Preference Learning).
+
+\textbf{New sentence for related work:} 
+While non-parametric Bayesian methods such as Gaussian Processes have been successfully applied to preference learning (\cite{chu2005preference}), our GRUM-based approach offers a parametric alternative that explicitly models the structural relationship between agent and alternative attributes.

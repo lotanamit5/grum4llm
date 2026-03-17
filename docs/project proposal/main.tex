@@ -1,0 +1,71 @@
+\documentclass{article}
+\usepackage{graphicx} % Required for inserting images
+\usepackage{float}
+\usepackage[margin=2.5cm]{geometry}
+\usepackage{xcolor}
+\usepackage{amsmath}
+\usepackage{amssymb}
+\usepackage{mathtools}
+\usepackage{amsthm}
+\usepackage{amsfonts}
+\usepackage{hyperref}
+\usepackage[normalem]{ulem}
+\usepackage{tcolorbox}
+\usepackage[
+        maxnames=2,
+        style=authoryear-comp,
+    ]{biblatex}
+\addbibresource{references.bib}
+
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+% THEOREMS
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+\theoremstyle{plain}
+\newtheorem{theorem}{Theorem} %[section]
+\newtheorem{proposition}{Proposition} %[theorem]{Proposition}
+\newtheorem{observation}{Observation} %[theorem]{Observation}
+\newtheorem{lemma}{Lemma}
+\newtheorem{corollary}{Corollary} %[theorem]{Corollary}
+\theoremstyle{definition}
+\newtheorem{definition}{Definition}
+\newtheorem{condition}{Condition}
+\newtheorem{assumption}{Assumption}
+\theoremstyle{remark}
+\newtheorem*{remark}{Remark}
+\newtheorem*{note}{Note}
+
+
+\newcommand{\red}[1]{{\leavevmode\color{red}{#1}}}
+\newcommand{\blue}[1]{{\leavevmode\color{blue}{#1}}}
+\newcommand{\green}[1]{{\leavevmode\color[RGB]{0,128,0}{#1}}}
+\newcommand{\purple}[1]{{\leavevmode\color[RGB]{128,0,255}{#1}}}
+\newcommand{\orange}[1]{{\leavevmode\color[RGB]{229,83,0}{#1}}}
+\newcommand{\cyan}[1]{{\leavevmode\color{cyan}{#1}}}
+\newcommand{\crimson}[1]{{\leavevmode\color[RGB]{220,20,60}{#1}}}
+\newcommand{\yellow}[1]{{\leavevmode\color[RGB]{201,201,26}{#1}}}
+\newcommand{\darkgray}[1]{{\leavevmode\color[RGB]{120,120,120}{#1}}}
+
+\newcommand\todo[1]{{\red{TODO: {#1}}}}
+\newcommand\tocite{\red{[CITE]}}
+\newcommand\tocitec[1]{\red{[CITE: {#1}]}}
+\newcommand\toref{\red{[REF]}}
+\newcommand\torefc[1]{\red{[REF: {#1}]}}
+\newcommand\extended[1]{} %{{\orange{EXTENDED: {#1}}}}
+\newcommand{\lotan}[1]{\crimson{[LOTAN: {#1}]}}
+\newcommand{\lotanadd}[1]{\crimson{{#1}}}
+
+
+\title{Social Choice Project}
+\author{Lotan Amit}
+\date{February 2026}
+
+\begin{document}
+
+\maketitle
+
+\input{paper_summary}
+\input{project_plan}
+
+\printbibliography
+\end{document}
+
