@@ -43,3 +43,47 @@ def test_invalid_dataset_raises_value_error() -> None:
         assert "dataset must be one of" in str(err)
     else:
         raise AssertionError("Expected ValueError for invalid dataset selector")
+
+
+def test_asymptotic_parallel_matches_serial_for_fixed_seed() -> None:
+    cfg = MCEMConfig(n_iterations=1, n_gibbs_samples=6, n_gibbs_burnin=3, random_seed=7)
+    serial = run_asymptotic_social_choice(
+        [5, 10],
+        dataset="dataset2",
+        repeats=2,
+        seed=11,
+        mcem_config=cfg,
+        n_jobs=1,
+    )
+    parallel = run_asymptotic_social_choice(
+        [5, 10],
+        dataset="dataset2",
+        repeats=2,
+        seed=11,
+        mcem_config=cfg,
+        n_jobs=2,
+    )
+
+    assert [(p.n_agents, p.mean_tau) for p in serial] == [(p.n_agents, p.mean_tau) for p in parallel]
+
+
+def test_criteria_parallel_matches_serial_for_fixed_seed() -> None:
+    cfg = MCEMConfig(n_iterations=1, n_gibbs_samples=6, n_gibbs_burnin=3, random_seed=8)
+    serial = compare_criteria_social_choice(
+        dataset="dataset2",
+        n_rounds=4,
+        repeats=2,
+        seed=6,
+        mcem_config=cfg,
+        n_jobs=1,
+    )
+    parallel = compare_criteria_social_choice(
+        dataset="dataset2",
+        n_rounds=4,
+        repeats=2,
+        seed=6,
+        mcem_config=cfg,
+        n_jobs=2,
+    )
+
+    assert serial == parallel

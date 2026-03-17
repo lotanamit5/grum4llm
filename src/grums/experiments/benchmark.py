@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from concurrent.futures import ProcessPoolExecutor, as_completed
 from dataclasses import dataclass
 from typing import Callable
 
@@ -64,12 +65,84 @@ def _dataset_builder(dataset: str):
     raise ValueError("dataset must be one of: dataset1, dataset2")
 
 
+def _single_asymptotic_task(
+    dataset: str,
+    n: int,
+    repeat_index: int,
+    max_agents: int,
+    seed: int,
+    config: MCEMConfig,
+) -> tuple[int, float]:
+    build_dataset = _dataset_builder(dataset)
+    data = build_dataset(n_agents=max_agents, seed=seed + repeat_index)
+    init = _default_initial_params(data)
+    inf = MCEMInference(config)
+    fit = inf.fit_map(
+        initial_params=init,
+        rankings=list(data.rankings[:n]),
+        agent_features=data.agent_features[:n],
+        alternative_features=data.alternative_features,
+    )
+    tau = social_choice_kendall_tau(data.params_true.delta, fit.params.delta)
+    return n, tau
+
+
+def _single_criteria_repeat_task(
+    dataset: str,
+    n_rounds: int,
+    repeat_index: int,
+    seed: int,
+    config: MCEMConfig,
+) -> dict[str, float]:
+    build_dataset = _dataset_builder(dataset)
+    data = build_dataset(n_agents=max(n_rounds + 1, 30), seed=seed + repeat_index)
+    m = data.params_true.n_alternatives
+
+    alternatives = [
+        AlternativeRecord(alternative_id=j, features=data.alternative_features[j]) for j in range(m)
+    ]
+    agents = [
+        AgentRecord(agent_id=f"a{i}", features=data.agent_features[i])
+        for i in range(data.agent_features.shape[0])
+    ]
+    ranking_by_agent = {f"a{i}": data.rankings[i] for i in range(len(data.rankings))}
+    provider = _OracleProvider(ranking_by_agent)
+
+    seed_obs = RankingObservation(agent_id="a0", ranking=data.rankings[0])
+    observed_agents = [agents[0]]
+    candidates = agents[1:]
+
+    criteria = {
+        "random": _RandomCriterion(seed + 1000 + repeat_index),
+        "d_opt": DOptimalityCriterion(),
+        "e_opt": EOptimalityCriterion(),
+        "social": SocialChoiceCriterion(n_alternatives=m),
+    }
+
+    out: dict[str, float] = {}
+    for name, criterion in criteria.items():
+        engine = AdaptiveElicitationEngine(criterion=criterion, mcem_config=config)
+        result = engine.run(
+            provider=provider,
+            initial_params=_default_initial_params(data),
+            initial_observations=[seed_obs],
+            observed_agents=observed_agents,
+            candidate_agents=candidates,
+            alternatives=alternatives,
+            n_rounds=n_rounds,
+        )
+        out[name] = social_choice_kendall_tau(data.params_true.delta, result.final_params.delta)
+
+    return out
+
+
 def run_asymptotic_social_choice(
     agent_counts: list[int],
     dataset: str = "dataset2",
     repeats: int = 3,
     seed: int = 0,
     mcem_config: MCEMConfig | None = None,
+    n_jobs: int = 1,
     progress_update: Callable[[int], None] | None = None,
 ) -> list[AsymptoticPoint]:
     """Run social-choice recovery vs number of observed agents.
@@ -78,27 +151,50 @@ def run_asymptotic_social_choice(
     """
 
     config = mcem_config or MCEMConfig(n_iterations=8, n_gibbs_samples=30, n_gibbs_burnin=15)
-    build_dataset = _dataset_builder(dataset)
+    _dataset_builder(dataset)
+    if n_jobs <= 0:
+        raise ValueError("n_jobs must be positive")
     points: list[AsymptoticPoint] = []
 
-    for n in agent_counts:
-        taus: list[float] = []
-        for r in range(repeats):
-            data = build_dataset(n_agents=max(agent_counts), seed=seed + r)
-            init = _default_initial_params(data)
-            inf = MCEMInference(config)
+    if n_jobs == 1:
+        build_dataset = _dataset_builder(dataset)
+        for n in agent_counts:
+            taus: list[float] = []
+            for r in range(repeats):
+                data = build_dataset(n_agents=max(agent_counts), seed=seed + r)
+                init = _default_initial_params(data)
+                inf = MCEMInference(config)
 
-            fit = inf.fit_map(
-                initial_params=init,
-                rankings=list(data.rankings[:n]),
-                agent_features=data.agent_features[:n],
-                alternative_features=data.alternative_features,
-            )
-            taus.append(social_choice_kendall_tau(data.params_true.delta, fit.params.delta))
+                fit = inf.fit_map(
+                    initial_params=init,
+                    rankings=list(data.rankings[:n]),
+                    agent_features=data.agent_features[:n],
+                    alternative_features=data.alternative_features,
+                )
+                taus.append(social_choice_kendall_tau(data.params_true.delta, fit.params.delta))
+                if progress_update is not None:
+                    progress_update(1)
+
+            points.append(AsymptoticPoint(n_agents=n, mean_tau=float(np.mean(taus))))
+
+        return points
+
+    max_agents = max(agent_counts)
+    taus_by_n: dict[int, list[float]] = {n: [] for n in agent_counts}
+    with ProcessPoolExecutor(max_workers=n_jobs) as ex:
+        futures = [
+            ex.submit(_single_asymptotic_task, dataset, n, r, max_agents, seed, config)
+            for n in agent_counts
+            for r in range(repeats)
+        ]
+        for fut in as_completed(futures):
+            n, tau = fut.result()
+            taus_by_n[n].append(tau)
             if progress_update is not None:
                 progress_update(1)
 
-        points.append(AsymptoticPoint(n_agents=n, mean_tau=float(np.mean(taus))))
+    for n in agent_counts:
+        points.append(AsymptoticPoint(n_agents=n, mean_tau=float(np.mean(taus_by_n[n]))))
 
     return points
 
@@ -109,6 +205,7 @@ def compare_criteria_social_choice(
     repeats: int = 3,
     seed: int = 0,
     mcem_config: MCEMConfig | None = None,
+    n_jobs: int = 1,
     progress_update: Callable[[int], None] | None = None,
 ) -> dict[str, float]:
     """Compare social-choice quality after adaptive elicitation by criterion.
@@ -117,49 +214,67 @@ def compare_criteria_social_choice(
     """
 
     config = mcem_config or MCEMConfig(n_iterations=6, n_gibbs_samples=25, n_gibbs_burnin=12)
-    build_dataset = _dataset_builder(dataset)
+    _dataset_builder(dataset)
+    if n_jobs <= 0:
+        raise ValueError("n_jobs must be positive")
 
     out: dict[str, list[float]] = {"random": [], "d_opt": [], "e_opt": [], "social": []}
 
-    for r in range(repeats):
-        data = build_dataset(n_agents=max(n_rounds + 1, 30), seed=seed + r)
-        m = data.params_true.n_alternatives
+    if n_jobs == 1:
+        build_dataset = _dataset_builder(dataset)
+        for r in range(repeats):
+            data = build_dataset(n_agents=max(n_rounds + 1, 30), seed=seed + r)
+            m = data.params_true.n_alternatives
 
-        alternatives = [
-            AlternativeRecord(alternative_id=j, features=data.alternative_features[j]) for j in range(m)
+            alternatives = [
+                AlternativeRecord(alternative_id=j, features=data.alternative_features[j]) for j in range(m)
+            ]
+            agents = [
+                AgentRecord(agent_id=f"a{i}", features=data.agent_features[i])
+                for i in range(data.agent_features.shape[0])
+            ]
+            ranking_by_agent = {f"a{i}": data.rankings[i] for i in range(len(data.rankings))}
+            provider = _OracleProvider(ranking_by_agent)
+
+            seed_obs = RankingObservation(agent_id="a0", ranking=data.rankings[0])
+            observed_agents = [agents[0]]
+            candidates = agents[1:]
+
+            criteria = {
+                "random": _RandomCriterion(seed + 1000 + r),
+                "d_opt": DOptimalityCriterion(),
+                "e_opt": EOptimalityCriterion(),
+                "social": SocialChoiceCriterion(n_alternatives=m),
+            }
+
+            for name, criterion in criteria.items():
+                engine = AdaptiveElicitationEngine(criterion=criterion, mcem_config=config)
+                result = engine.run(
+                    provider=provider,
+                    initial_params=_default_initial_params(data),
+                    initial_observations=[seed_obs],
+                    observed_agents=observed_agents,
+                    candidate_agents=candidates,
+                    alternatives=alternatives,
+                    n_rounds=n_rounds,
+                )
+                tau = social_choice_kendall_tau(data.params_true.delta, result.final_params.delta)
+                out[name].append(tau)
+                if progress_update is not None:
+                    progress_update(n_rounds)
+
+        return {k: float(np.mean(v)) for k, v in out.items()}
+
+    with ProcessPoolExecutor(max_workers=n_jobs) as ex:
+        futures = [
+            ex.submit(_single_criteria_repeat_task, dataset, n_rounds, r, seed, config)
+            for r in range(repeats)
         ]
-        agents = [
-            AgentRecord(agent_id=f"a{i}", features=data.agent_features[i])
-            for i in range(data.agent_features.shape[0])
-        ]
-        ranking_by_agent = {f"a{i}": data.rankings[i] for i in range(len(data.rankings))}
-        provider = _OracleProvider(ranking_by_agent)
-
-        seed_obs = RankingObservation(agent_id="a0", ranking=data.rankings[0])
-        observed_agents = [agents[0]]
-        candidates = agents[1:]
-
-        criteria = {
-            "random": _RandomCriterion(seed + 1000 + r),
-            "d_opt": DOptimalityCriterion(),
-            "e_opt": EOptimalityCriterion(),
-            "social": SocialChoiceCriterion(n_alternatives=m),
-        }
-
-        for name, criterion in criteria.items():
-            engine = AdaptiveElicitationEngine(criterion=criterion, mcem_config=config)
-            result = engine.run(
-                provider=provider,
-                initial_params=_default_initial_params(data),
-                initial_observations=[seed_obs],
-                observed_agents=observed_agents,
-                candidate_agents=candidates,
-                alternatives=alternatives,
-                n_rounds=n_rounds,
-            )
-            tau = social_choice_kendall_tau(data.params_true.delta, result.final_params.delta)
-            out[name].append(tau)
+        for fut in as_completed(futures):
+            rep_scores = fut.result()
+            for k, v in rep_scores.items():
+                out[k].append(v)
             if progress_update is not None:
-                progress_update(n_rounds)
+                progress_update(n_rounds * 4)
 
     return {k: float(np.mean(v)) for k, v in out.items()}

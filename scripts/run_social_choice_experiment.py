@@ -48,6 +48,7 @@ DEFAULTS: dict[str, Any] = {
     "repeats": 3,
     "rounds": 20,
     "seed": 0,
+    "n_jobs": 1,
     "iterations": 6,
     "gibbs_samples": 25,
     "gibbs_burnin": 12,
@@ -80,9 +81,21 @@ def _normalize_config(raw: dict[str, Any]) -> dict[str, Any]:
     if "dataset" in normalized and normalized["dataset"] not in {"dataset1", "dataset2"}:
         raise ValueError("dataset must be one of: dataset1, dataset2")
 
-    for key in ["repeats", "rounds", "seed", "iterations", "gibbs_samples", "gibbs_burnin", "random_seed"]:
+    for key in [
+        "repeats",
+        "rounds",
+        "seed",
+        "n_jobs",
+        "iterations",
+        "gibbs_samples",
+        "gibbs_burnin",
+        "random_seed",
+    ]:
         if key in normalized and not isinstance(normalized[key], int):
             raise ValueError(f"{key} must be an integer")
+
+    if "n_jobs" in normalized and normalized["n_jobs"] <= 0:
+        raise ValueError("n_jobs must be positive")
 
     for key in ["sigma", "prior_precision", "tolerance"]:
         if key in normalized and not isinstance(normalized[key], (float, int)):
@@ -130,6 +143,7 @@ def main(argv: list[str] | None = None) -> None:
     parser.add_argument("--repeats", type=int, default=defaults["repeats"])
     parser.add_argument("--rounds", type=int, default=defaults["rounds"])
     parser.add_argument("--seed", type=int, default=defaults["seed"])
+    parser.add_argument("--n-jobs", type=int, default=defaults["n_jobs"])
 
     parser.add_argument("--iterations", type=int, default=defaults["iterations"])
     parser.add_argument("--gibbs-samples", type=int, default=defaults["gibbs_samples"])
@@ -164,6 +178,7 @@ def main(argv: list[str] | None = None) -> None:
         "dataset": args.dataset,
         "seed": args.seed,
         "repeats": args.repeats,
+        "n_jobs": args.n_jobs,
         "started_at_utc": _utc_now_iso(),
     }
 
@@ -196,6 +211,7 @@ def main(argv: list[str] | None = None) -> None:
             repeats=args.repeats,
             seed=args.seed,
             mcem_config=cfg,
+            n_jobs=args.n_jobs,
             progress_update=_asym_update,
         )
         if asym_bar is not None:
@@ -237,6 +253,7 @@ def main(argv: list[str] | None = None) -> None:
             repeats=args.repeats,
             seed=args.seed,
             mcem_config=cfg,
+            n_jobs=args.n_jobs,
             progress_update=_criteria_update,
         )
         if criteria_bar is not None:

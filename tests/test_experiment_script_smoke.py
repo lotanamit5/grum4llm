@@ -31,6 +31,7 @@ def test_run_social_choice_experiment_script_smoke(tmp_path: Path) -> None:
 
     payload = json.loads(out.read_text(encoding="utf-8"))
     assert payload["dataset"] == "dataset2"
+    assert payload["n_jobs"] == 1
     assert "asymptotic" in payload
     assert "criteria" in payload
     assert "timing" in payload
@@ -51,6 +52,7 @@ def test_run_with_config_file(tmp_path: Path) -> None:
                 "agent_counts: [5, 10]",
                 "repeats: 1",
                 "seed: 3",
+                "n_jobs: 1",
                 "iterations: 0",
                 "no_progress: true",
                 f"output_json: {out}",
@@ -87,6 +89,7 @@ def test_cli_overrides_config_value(tmp_path: Path) -> None:
                 "rounds: 2",
                 "repeats: 1",
                 "seed: 1",
+                "n_jobs: 1",
                 "iterations: 0",
                 "no_progress: true",
                 f"output_json: {out}",

@@ -4,6 +4,7 @@ agent_counts: [10, 20, 30, 40, 50]
 repeats: 3
 rounds: 30
 seed: 1
+n_jobs: 1
 iterations: 6
 gibbs_samples: 25
 gibbs_burnin: 12

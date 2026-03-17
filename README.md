@@ -28,6 +28,7 @@ Run a social-choice synthetic experiment end-to-end:
 	--agent-counts 10,20,30 \
 	--rounds 20 \
 	--repeats 3 \
+	--n-jobs 32 \
 	--seed 0 \
 	--output-json results_social_choice.json
 ```
@@ -44,5 +45,12 @@ CLI arguments override values from the config file, for example:
 ```bash
 /home/lotanamit/miniconda3/envs/env/bin/python scripts/run_social_choice_experiment.py \
 	--config configs/light/social_choice_light.yml \
-	--rounds 10
+	--rounds 10 \
+	--n-jobs 16
 ```
+
+Notes:
+
+- `n_jobs` controls CPU worker processes for parallel repeat execution in asymptotic and criteria phases.
+- For large servers, set `--n-jobs` close to your available CPU count (for example, `256` or `512`) and benchmark throughput.
+- Current experiment code path is CPU-based (NumPy/SciPy); GPUs are not used yet.

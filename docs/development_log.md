@@ -41,3 +41,7 @@ Implemented config-first experiment execution via `--config` YAML with strict ke
 ## Stage B - Social-Choice Asymptotic (Figure 2 Style) Foundation
 
 Implemented dataset-selectable social-choice runners (`dataset1`/`dataset2`), CLI/config dataset routing, and a smoothing utility (moving average) for report curves, with additional test coverage for selector validation and smoothing behavior. Initial asymptotic runs completed for both synthetic datasets, but trend similarity to the paper is not yet sufficient; further iteration on Stage B settings/implementation is required before advancing.
+
+## Stage B.1 - CPU Parallelization for Reproduction Sweeps
+
+Added process-based parallel execution for repeat-level workloads in both asymptotic and criteria social-choice benchmarks, exposed via `n_jobs` in CLI and YAML configs with strict validation (`n_jobs > 0`). Added deterministic equivalence tests showing serial and parallel runs match for fixed seeds, enabling high-core-count servers (for example 256/512 CPUs) to accelerate full reproduction sweeps without changing statistical outputs.
