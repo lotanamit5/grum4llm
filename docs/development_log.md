@@ -17,3 +17,7 @@ Implemented Normal-family observed/candidate Fisher information utilities and a 
 ## Step 4 - Adaptive Elicitation Engine (Provider-Agnostic)
 
 Implemented an Algorithm-1 style adaptive elicitation engine that iterates MAP fitting, precision update, criterion-based candidate scoring, and provider query/update steps while keeping all data acquisition behind the `PreferenceProvider` contract. This maps to paper Section 3's iterative elicitation loop and to the proposal requirement that GRUM logic remain decoupled from the elicitation source (human/simulation/LLM) while enabling persona-targeted querying.
+
+## Step 5 - Social-Choice Reproduction Harness
+
+Implemented synthetic Dataset 1 and Dataset 2 generators, social-choice Kendall-tau evaluation, and reproducible benchmark runners for asymptotic recovery and criterion comparison against random selection. This maps to paper Section 6.1 (synthetic social-choice experiments and criterion comparisons) and enforces the proposal requirement to validate correctness by replication-style behavior before using GRUM on LLM preference elicitation.
