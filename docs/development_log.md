@@ -9,3 +9,7 @@ Implemented typed GRUM parameter containers, deterministic utility computation $
 ## Step 2 - MC-EM Inference Baseline (Normal Family)
 
 Implemented a first MC-EM inference engine for the Normal-family GRUM path with Gibbs-based E-step under ranking constraints, ridge-regularized closed-form M-step updates for $\delta$ and $B$, and objective/convergence diagnostics. This corresponds to the paper's Section 4 Monte Carlo E-step and M-step flow (Equations (8) and (9)) and supports the proposal requirement to estimate intrinsic and interaction preferences before adaptive elicitation and model comparison.
+
+## Step 3 - Observed Fisher Information and Elicitation Criteria
+
+Implemented Normal-family observed/candidate Fisher information utilities and a criterion layer containing D-optimality, E-optimality, and the social-choice certainty criterion aligned with Equation (5). This maps to the paper's Section 4.3 and Table 1 (information-based elicitation scoring) and supports the proposal's Experiment 1 framing by making intrinsic preference uncertainty explicitly measurable and optimizable.
