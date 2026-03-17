@@ -3,7 +3,7 @@
 This package will host model definitions, inference, and elicitation engines.
 """
 
-from grums.core.model_math import compute_mean_utilities
+from grums.core.model_math import compute_mean_utilities, predict_deterministic_rankings
 from grums.core.parameters import GRUMParameters
 from grums.core.rankings import FullRanking, PartialRanking
 from grums.core.validations import (
@@ -15,6 +15,7 @@ from grums.core.validations import (
 __all__ = [
 	"GRUMParameters",
 	"compute_mean_utilities",
+	"predict_deterministic_rankings",
 	"FullRanking",
 	"PartialRanking",
 	"satisfies_connectivity_condition",

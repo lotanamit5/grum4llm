@@ -3,6 +3,7 @@
 from grums.elicitation.criteria import (
     DOptimalityCriterion,
     EOptimalityCriterion,
+    PersonalizedChoiceCriterion,
     SocialChoiceCriterion,
 )
 from grums.elicitation.engine import (
@@ -15,6 +16,7 @@ __all__ = [
     "DOptimalityCriterion",
     "EOptimalityCriterion",
     "SocialChoiceCriterion",
+    "PersonalizedChoiceCriterion",
     "ElicitationStep",
     "AdaptiveElicitationResult",
     "AdaptiveElicitationEngine",

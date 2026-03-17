@@ -37,3 +37,14 @@ def compute_mean_utilities(
 
     interaction_term = agent_features @ params.interaction @ alternative_features.T
     return interaction_term + params.delta.reshape(1, n_alternatives).repeat(n_agents, axis=0)
+
+
+def predict_deterministic_rankings(
+    params: GRUMParameters,
+    agent_features: FloatArray,
+    alternative_features: FloatArray,
+) -> list[tuple[int, ...]]:
+    """Predict per-agent rankings from deterministic utilities."""
+
+    mu = compute_mean_utilities(params, agent_features, alternative_features)
+    return [tuple(np.argsort(-row)) for row in mu]

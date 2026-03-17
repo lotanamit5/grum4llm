@@ -29,3 +29,7 @@ Added a lightweight script entrypoint to run the current social-choice synthetic
 ## Step 5.3 - Runtime Progress Bars
 
 Added optional tqdm-backed progress bars for both asymptotic and criteria phases, wired through benchmark progress callbacks so we can track unit completion during long runs and better estimate resource requirements. This complements Step 5 timing instrumentation by providing live visibility into run advancement and helps decide whether to stay on local CPU or move to larger compute resources.
+
+## Step 6 - Personalized Choice Path
+
+Implemented a personalized-choice criterion (Eq. 6 style certainty approximation), deterministic per-agent ranking prediction APIs, and personalized evaluation/asymptotic routines with seed-stability tests. This maps to paper Sections 3.2 and 6.2 by adding agent-specific preference quality evaluation and prepares the codebase for proposal Experiment 2 analysis of persona-dependent rank reversals.

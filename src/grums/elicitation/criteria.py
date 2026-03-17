@@ -65,3 +65,59 @@ class SocialChoiceCriterion:
                 min_certainty = min(min_certainty, certainty)
 
         return float(min_certainty)
+
+
+@dataclass(frozen=True)
+class PersonalizedChoiceCriterion:
+    """Approximate Eq. (6) by averaging per-agent pairwise certainty."""
+
+    n_alternatives: int
+    n_agent_features: int
+    n_alternative_features: int
+    alternative_features: FloatArray
+    population_agents: FloatArray
+    min_variance: float = 1e-12
+
+    def score(self, prior_plus_candidate_info: FloatArray, theta_vector: FloatArray) -> float:
+        if theta_vector.ndim != 1:
+            raise ValueError("theta_vector must be 1D")
+        if self.alternative_features.shape != (self.n_alternatives, self.n_alternative_features):
+            raise ValueError("alternative_features has incompatible shape")
+        if self.population_agents.ndim != 2 or self.population_agents.shape[1] != self.n_agent_features:
+            raise ValueError("population_agents has incompatible shape")
+
+        expected_len = self.n_alternatives + (self.n_agent_features * self.n_alternative_features)
+        if theta_vector.shape[0] < expected_len:
+            raise ValueError("theta_vector is shorter than expected parameter size")
+
+        delta = theta_vector[: self.n_alternatives]
+        b_vec = theta_vector[
+            self.n_alternatives : self.n_alternatives + (self.n_agent_features * self.n_alternative_features)
+        ]
+        b = b_vec.reshape(self.n_agent_features, self.n_alternative_features)
+        covariance = np.linalg.inv(prior_plus_candidate_info)
+
+        per_agent_scores: list[float] = []
+        for x in self.population_agents:
+            min_certainty = float("inf")
+            for j1 in range(self.n_alternatives):
+                for j2 in range(j1 + 1, self.n_alternatives):
+                    z1 = self.alternative_features[j1]
+                    z2 = self.alternative_features[j2]
+
+                    mu1 = float(delta[j1] + x @ b @ z1)
+                    mu2 = float(delta[j2] + x @ b @ z2)
+                    diff_mean = abs(mu1 - mu2)
+
+                    grad = np.zeros(expected_len, dtype=float)
+                    grad[j1] = 1.0
+                    grad[j2] = -1.0
+                    grad[self.n_alternatives :] = np.kron(z1 - z2, x)
+
+                    diff_var = float(grad @ covariance @ grad)
+                    diff_std = np.sqrt(max(diff_var, self.min_variance))
+                    certainty = diff_mean / diff_std
+                    min_certainty = min(min_certainty, certainty)
+            per_agent_scores.append(min_certainty)
+
+        return float(np.mean(per_agent_scores))
