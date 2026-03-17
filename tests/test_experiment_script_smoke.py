@@ -30,6 +30,7 @@ def test_run_social_choice_experiment_script_smoke(tmp_path: Path) -> None:
     subprocess.run(cmd, check=True)
 
     payload = json.loads(out.read_text(encoding="utf-8"))
+    assert payload["dataset"] == "dataset2"
     assert "asymptotic" in payload
     assert "criteria" in payload
     assert "timing" in payload
@@ -68,6 +69,7 @@ def test_run_with_config_file(tmp_path: Path) -> None:
 
     payload = json.loads(out.read_text(encoding="utf-8"))
     assert payload["config_file"] == str(cfg)
+    assert payload["dataset"] == "dataset2"
     assert "asymptotic" in payload
     assert len(payload["asymptotic"]) == 2
     assert "criteria" not in payload
@@ -105,6 +107,7 @@ def test_cli_overrides_config_value(tmp_path: Path) -> None:
 
     payload = json.loads(out.read_text(encoding="utf-8"))
     assert payload["config_file"] == str(cfg)
+    assert payload["dataset"] == "dataset2"
     assert "criteria" in payload
     assert payload["repeats"] == 1
 

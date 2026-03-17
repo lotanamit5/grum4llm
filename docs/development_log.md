@@ -37,3 +37,7 @@ Implemented a personalized-choice criterion (Eq. 6 style certainty approximation
 ## Stage A - Reproduction Config Presets and Guardrails
 
 Implemented config-first experiment execution via `--config` YAML with strict key/type validation, CLI override precedence, reproducibility config files under `configs/repro/`, and regression tests for config loading/validation/output path behavior. This establishes an auditable, professor-friendly guardrail for paper-reproduction runs and provides a deterministic execution matrix that we will use in subsequent reproduction stages.
+
+## Stage B - Social-Choice Asymptotic (Figure 2 Style) Foundation
+
+Implemented dataset-selectable social-choice runners (`dataset1`/`dataset2`), CLI/config dataset routing, and a smoothing utility (moving average) for report curves, with additional test coverage for selector validation and smoothing behavior. Initial asymptotic runs completed for both synthetic datasets, but trend similarity to the paper is not yet sufficient; further iteration on Stage B settings/implementation is required before advancing.

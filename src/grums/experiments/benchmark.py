@@ -16,7 +16,7 @@ from grums.elicitation import (
     SocialChoiceCriterion,
 )
 from grums.experiments.metrics import social_choice_kendall_tau
-from grums.experiments.synthetic_data import SyntheticDataset, make_dataset_2
+from grums.experiments.synthetic_data import SyntheticDataset, make_dataset_1, make_dataset_2
 from grums.inference import MCEMConfig, MCEMInference
 
 
@@ -56,8 +56,17 @@ def _default_initial_params(dataset: SyntheticDataset) -> GRUMParameters:
     return GRUMParameters(delta=np.zeros(m, dtype=float), interaction=np.zeros((k, l), dtype=float))
 
 
+def _dataset_builder(dataset: str):
+    if dataset == "dataset1":
+        return make_dataset_1
+    if dataset == "dataset2":
+        return make_dataset_2
+    raise ValueError("dataset must be one of: dataset1, dataset2")
+
+
 def run_asymptotic_social_choice(
     agent_counts: list[int],
+    dataset: str = "dataset2",
     repeats: int = 3,
     seed: int = 0,
     mcem_config: MCEMConfig | None = None,
@@ -65,16 +74,17 @@ def run_asymptotic_social_choice(
 ) -> list[AsymptoticPoint]:
     """Run social-choice recovery vs number of observed agents.
 
-    Uses Dataset 2 by default to provide a stronger social signal.
+    Dataset can be `dataset1` or `dataset2`.
     """
 
     config = mcem_config or MCEMConfig(n_iterations=8, n_gibbs_samples=30, n_gibbs_burnin=15)
+    build_dataset = _dataset_builder(dataset)
     points: list[AsymptoticPoint] = []
 
     for n in agent_counts:
         taus: list[float] = []
         for r in range(repeats):
-            data = make_dataset_2(n_agents=max(agent_counts), seed=seed + r)
+            data = build_dataset(n_agents=max(agent_counts), seed=seed + r)
             init = _default_initial_params(data)
             inf = MCEMInference(config)
 
@@ -94,6 +104,7 @@ def run_asymptotic_social_choice(
 
 
 def compare_criteria_social_choice(
+    dataset: str = "dataset2",
     n_rounds: int = 20,
     repeats: int = 3,
     seed: int = 0,
@@ -106,11 +117,12 @@ def compare_criteria_social_choice(
     """
 
     config = mcem_config or MCEMConfig(n_iterations=6, n_gibbs_samples=25, n_gibbs_burnin=12)
+    build_dataset = _dataset_builder(dataset)
 
     out: dict[str, list[float]] = {"random": [], "d_opt": [], "e_opt": [], "social": []}
 
     for r in range(repeats):
-        data = make_dataset_2(n_agents=max(n_rounds + 1, 30), seed=seed + r)
+        data = build_dataset(n_agents=max(n_rounds + 1, 30), seed=seed + r)
         m = data.params_true.n_alternatives
 
         alternatives = [

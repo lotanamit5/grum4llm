@@ -37,3 +37,17 @@ def personalized_mean_kendall_tau(
         taus.append(0.0 if np.isnan(tau) else float(tau))
 
     return float(np.mean(taus))
+
+
+def moving_average(series: np.ndarray, window: int) -> np.ndarray:
+    """Simple trailing moving average used for smoothed report curves."""
+
+    if window <= 0:
+        raise ValueError("window must be positive")
+    if series.ndim != 1:
+        raise ValueError("series must be 1D")
+    if window > series.shape[0]:
+        raise ValueError("window cannot exceed series length")
+
+    weights = np.ones(window, dtype=float) / float(window)
+    return np.convolve(series, weights, mode="valid")

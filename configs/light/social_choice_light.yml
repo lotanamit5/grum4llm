@@ -1,4 +1,5 @@
 mode: both
+dataset: dataset2
 agent_counts: [5, 10]
 repeats: 1
 rounds: 4
