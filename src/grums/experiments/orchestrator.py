@@ -320,10 +320,11 @@ def aggregate_asymptotic(payloads: list[tuple[Path, dict[str, Any]]]) -> dict[st
 
 def aggregate_criteria(payloads: list[tuple[Path, dict[str, Any]]]) -> dict[str, Any]:
     rows: list[dict[str, Any]] = []
-    grouped: dict[str, list[float]] = {}
+    grouped: dict[tuple[str, int], list[float]] = {}
 
     for file_path, payload in payloads:
         seed = payload.get("seed")
+        rounds = payload.get("rounds", 0)
         criteria = payload.get("criteria", {})
         if not isinstance(criteria, dict):
             continue
@@ -333,18 +334,21 @@ def aggregate_criteria(payloads: list[tuple[Path, dict[str, Any]]]) -> dict[str,
                 {
                     "file": file_path.name,
                     "seed": seed,
+                    "rounds": rounds,
                     "criterion": str(name),
                     "score": value,
                 }
             )
-            grouped.setdefault(str(name), []).append(value)
+            grouped.setdefault((str(name), rounds), []).append(value)
 
     summary: list[dict[str, Any]] = []
-    for criterion in sorted(grouped.keys()):
-        values = grouped[criterion]
+    for key in sorted(grouped.keys()):
+        criterion, rounds = key
+        values = grouped[key]
         summary.append(
             {
                 "criterion": criterion,
+                "rounds": rounds,
                 "count": len(values),
                 "mean": float(mean(values)),
                 "std": float(pstdev(values)) if len(values) > 1 else 0.0,

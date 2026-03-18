@@ -181,6 +181,7 @@ def main(argv: list[str] | None = None) -> None:
         "config_file": args.config if args.config else None,
         "dataset": args.dataset,
         "seed": args.seed,
+        "rounds": args.rounds,
         "repeats": args.repeats,
         "n_jobs": args.n_jobs,
         "started_at_utc": _utc_now_iso(),
