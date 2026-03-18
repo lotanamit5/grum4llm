@@ -91,9 +91,10 @@ def _single_criteria_repeat_task(
     dataset: str,
     n_rounds: int,
     repeat_index: int,
+    criterion_name: str,
     seed: int,
     config: MCEMConfig,
-) -> dict[str, float]:
+) -> float:
     build_dataset = _dataset_builder(dataset)
     data = build_dataset(n_agents=max(n_rounds + 1, 30), seed=seed + repeat_index)
     m = data.params_true.n_alternatives
@@ -117,23 +118,21 @@ def _single_criteria_repeat_task(
         "d_opt": DOptimalityCriterion(),
         "e_opt": EOptimalityCriterion(),
         "social": SocialChoiceCriterion(n_alternatives=m),
+        "personalized": SocialChoiceCriterion(n_alternatives=m),
     }
 
-    out: dict[str, float] = {}
-    for name, criterion in criteria.items():
-        engine = AdaptiveElicitationEngine(criterion=criterion, mcem_config=config)
-        result = engine.run(
-            provider=provider,
-            initial_params=_default_initial_params(data),
-            initial_observations=[seed_obs],
-            observed_agents=observed_agents,
-            candidate_agents=candidates,
-            alternatives=alternatives,
-            n_rounds=n_rounds,
-        )
-        out[name] = social_choice_kendall_tau(data.params_true.delta, result.final_params.delta)
-
-    return out
+    criterion = criteria[criterion_name]
+    engine = AdaptiveElicitationEngine(criterion=criterion, mcem_config=config)
+    result = engine.run(
+        provider=provider,
+        initial_params=_default_initial_params(data),
+        initial_observations=[seed_obs],
+        observed_agents=observed_agents,
+        candidate_agents=candidates,
+        alternatives=alternatives,
+        n_rounds=n_rounds,
+    )
+    return social_choice_kendall_tau(data.params_true.delta, result.final_params.delta)
 
 
 def run_asymptotic_social_choice(
@@ -203,14 +202,15 @@ def compare_criteria_social_choice(
     dataset: str = "dataset2",
     n_rounds: int = 20,
     repeats: int = 3,
+    criterion_name: str = "social",
     seed: int = 0,
     mcem_config: MCEMConfig | None = None,
     n_jobs: int = 1,
     progress_update: Callable[[int], None] | None = None,
-) -> dict[str, float]:
-    """Compare social-choice quality after adaptive elicitation by criterion.
+) -> float:
+    """Compare social-choice quality after adaptive elicitation for a specific criterion.
 
-    Returns mean Kendall tau across repeats for each criterion.
+    Returns mean Kendall tau across repeats for the criterion.
     """
 
     config = mcem_config or MCEMConfig(n_iterations=6, n_gibbs_samples=25, n_gibbs_burnin=12)
@@ -218,7 +218,7 @@ def compare_criteria_social_choice(
     if n_jobs <= 0:
         raise ValueError("n_jobs must be positive")
 
-    out: dict[str, list[float]] = {"random": [], "d_opt": [], "e_opt": [], "social": []}
+    out: list[float] = []
 
     if n_jobs == 1:
         build_dataset = _dataset_builder(dataset)
@@ -245,36 +245,36 @@ def compare_criteria_social_choice(
                 "d_opt": DOptimalityCriterion(),
                 "e_opt": EOptimalityCriterion(),
                 "social": SocialChoiceCriterion(n_alternatives=m),
+                "personalized": SocialChoiceCriterion(n_alternatives=m),
             }
 
-            for name, criterion in criteria.items():
-                engine = AdaptiveElicitationEngine(criterion=criterion, mcem_config=config)
-                result = engine.run(
-                    provider=provider,
-                    initial_params=_default_initial_params(data),
-                    initial_observations=[seed_obs],
-                    observed_agents=observed_agents,
-                    candidate_agents=candidates,
-                    alternatives=alternatives,
-                    n_rounds=n_rounds,
-                )
-                tau = social_choice_kendall_tau(data.params_true.delta, result.final_params.delta)
-                out[name].append(tau)
-                if progress_update is not None:
-                    progress_update(n_rounds)
+            criterion = criteria[criterion_name]
+            engine = AdaptiveElicitationEngine(criterion=criterion, mcem_config=config)
+            result = engine.run(
+                provider=provider,
+                initial_params=_default_initial_params(data),
+                initial_observations=[seed_obs],
+                observed_agents=observed_agents,
+                candidate_agents=candidates,
+                alternatives=alternatives,
+                n_rounds=n_rounds,
+            )
+            tau = social_choice_kendall_tau(data.params_true.delta, result.final_params.delta)
+            out.append(tau)
+            if progress_update is not None:
+                progress_update(n_rounds)
 
-        return {k: float(np.mean(v)) for k, v in out.items()}
+        return float(np.mean(out))
 
     with ProcessPoolExecutor(max_workers=n_jobs) as ex:
         futures = [
-            ex.submit(_single_criteria_repeat_task, dataset, n_rounds, r, seed, config)
+            ex.submit(_single_criteria_repeat_task, dataset, n_rounds, r, criterion_name, seed, config)
             for r in range(repeats)
         ]
         for fut in as_completed(futures):
-            rep_scores = fut.result()
-            for k, v in rep_scores.items():
-                out[k].append(v)
+            rep_score = fut.result()
+            out.append(rep_score)
             if progress_update is not None:
-                progress_update(n_rounds * 4)
+                progress_update(n_rounds)
 
-    return {k: float(np.mean(v)) for k, v in out.items()}
+    return float(np.mean(out))

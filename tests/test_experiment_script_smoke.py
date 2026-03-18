@@ -36,7 +36,7 @@ def test_run_social_choice_experiment_script_smoke(tmp_path: Path) -> None:
     assert "criteria" in payload
     assert "timing" in payload
     assert len(payload["asymptotic"]) == 2
-    assert set(payload["criteria"].keys()) == {"random", "d_opt", "e_opt", "social"}
+    assert set(payload["criteria"].keys()).issubset({"random", "d_opt", "e_opt", "social", "personalized"})
     assert payload["timing"]["total_seconds"] >= 0.0
 
 
@@ -86,6 +86,7 @@ def test_cli_overrides_config_value(tmp_path: Path) -> None:
         "\n".join(
             [
                 "mode: criteria",
+                "criterion: d_opt",
                 "rounds: 2",
                 "repeats: 1",
                 "seed: 1",
@@ -112,6 +113,7 @@ def test_cli_overrides_config_value(tmp_path: Path) -> None:
     assert payload["config_file"] == str(cfg)
     assert payload["dataset"] == "dataset2"
     assert "criteria" in payload
+    assert "d_opt" in payload["criteria"]
     assert payload["repeats"] == 1
 
 

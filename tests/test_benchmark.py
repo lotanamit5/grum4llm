@@ -12,18 +12,19 @@ def test_asymptotic_runner_is_reproducible_for_seed() -> None:
 
 def test_criteria_comparison_returns_expected_keys_and_range() -> None:
     cfg = MCEMConfig(n_iterations=3, n_gibbs_samples=10, n_gibbs_burnin=5, random_seed=5)
-    scores = compare_criteria_social_choice(dataset="dataset2", n_rounds=5, repeats=2, seed=3, mcem_config=cfg)
+    score = compare_criteria_social_choice(dataset="dataset2", criterion_name="social", n_rounds=5, repeats=2, seed=3, mcem_config=cfg)
 
-    assert set(scores.keys()) == {"random", "d_opt", "e_opt", "social"}
-    assert all(-1.0 <= value <= 1.0 for value in scores.values())
+    assert isinstance(score, float)
+    assert -1.0 <= score <= 1.0
 
 
 def test_non_random_criterion_can_outperform_random_on_dataset2() -> None:
     cfg = MCEMConfig(n_iterations=3, n_gibbs_samples=10, n_gibbs_burnin=5, random_seed=1)
-    scores = compare_criteria_social_choice(dataset="dataset2", n_rounds=8, repeats=3, seed=4, mcem_config=cfg)
+    score_random = compare_criteria_social_choice(dataset="dataset2", criterion_name="random", n_rounds=8, repeats=3, seed=4, mcem_config=cfg)
+    score_social = compare_criteria_social_choice(dataset="dataset2", criterion_name="social", n_rounds=8, repeats=3, seed=4, mcem_config=cfg)
+    score_opt = compare_criteria_social_choice(dataset="dataset2", criterion_name="d_opt", n_rounds=8, repeats=3, seed=4, mcem_config=cfg)
 
-    best_non_random = max(scores["d_opt"], scores["e_opt"], scores["social"])
-    assert best_non_random >= scores["random"]
+    assert max(score_social, score_opt) >= score_random
 
 
 def test_dataset_selector_changes_output_distribution() -> None:
@@ -73,6 +74,7 @@ def test_criteria_parallel_matches_serial_for_fixed_seed() -> None:
         dataset="dataset2",
         n_rounds=4,
         repeats=2,
+        criterion_name="social",
         seed=6,
         mcem_config=cfg,
         n_jobs=1,
@@ -81,6 +83,7 @@ def test_criteria_parallel_matches_serial_for_fixed_seed() -> None:
         dataset="dataset2",
         n_rounds=4,
         repeats=2,
+        criterion_name="social",
         seed=6,
         mcem_config=cfg,
         n_jobs=2,

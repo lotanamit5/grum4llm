@@ -43,6 +43,7 @@ def _parse_agent_counts(raw: str) -> list[int]:
 
 DEFAULTS: dict[str, Any] = {
     "mode": "both",
+    "criterion": "social",
     "dataset": "dataset2",
     "agent_counts": "10,20,30",
     "repeats": 3,
@@ -78,6 +79,8 @@ def _normalize_config(raw: dict[str, Any]) -> dict[str, Any]:
 
     if "mode" in normalized and normalized["mode"] not in {"asymptotic", "criteria", "both"}:
         raise ValueError("mode must be one of: asymptotic, criteria, both")
+    if "criterion" in normalized and normalized["criterion"] not in {"random", "d_opt", "e_opt", "social", "personalized"}:
+        raise ValueError("criterion must be one of: random, d_opt, e_opt, social, personalized")
     if "dataset" in normalized and normalized["dataset"] not in {"dataset1", "dataset2"}:
         raise ValueError("dataset must be one of: dataset1, dataset2")
 
@@ -138,6 +141,7 @@ def main(argv: list[str] | None = None) -> None:
     parser = argparse.ArgumentParser(description="Run synthetic social-choice GRUM experiments.")
     parser.add_argument("--config", type=str, default=pre_args.config, help="Path to YAML run config")
     parser.add_argument("--mode", choices=["asymptotic", "criteria", "both"], default=defaults["mode"])
+    parser.add_argument("--criterion", choices=["random", "d_opt", "e_opt", "social", "personalized"], default=defaults["criterion"])
     parser.add_argument("--dataset", choices=["dataset1", "dataset2"], default=defaults["dataset"])
     parser.add_argument("--agent-counts", default=defaults["agent_counts"])
     parser.add_argument("--repeats", type=int, default=defaults["repeats"])
@@ -234,11 +238,12 @@ def main(argv: list[str] | None = None) -> None:
             log_enabled,
             (
                 "Criteria phase started "
-                f"(dataset={args.dataset}, rounds={args.rounds}, repeats={args.repeats}, criteria=4, iterations={args.iterations})"
+                f"(dataset={args.dataset}, criterion={args.criterion}, rounds={args.rounds}, "
+                f"repeats={args.repeats}, iterations={args.iterations})"
             ),
         )
         t0 = perf_counter()
-        criteria_total_units = args.rounds * args.repeats * 4
+        criteria_total_units = args.rounds * args.repeats
         criteria_bar = None
         if not args.no_progress and tqdm is not None:
             criteria_bar = tqdm(total=criteria_total_units, desc="Criteria", unit="round")
@@ -247,10 +252,11 @@ def main(argv: list[str] | None = None) -> None:
             if criteria_bar is not None:
                 criteria_bar.update(delta)
 
-        scores = compare_criteria_social_choice(
+        score = compare_criteria_social_choice(
             dataset=args.dataset,
             n_rounds=args.rounds,
             repeats=args.repeats,
+            criterion_name=args.criterion,
             seed=args.seed,
             mcem_config=cfg,
             n_jobs=args.n_jobs,
@@ -260,14 +266,14 @@ def main(argv: list[str] | None = None) -> None:
             criteria_bar.close()
         criteria_seconds = perf_counter() - t0
         timing["criteria_seconds"] = criteria_seconds
-        payload["criteria"] = scores
+        payload["criteria"] = {args.criterion: score}
 
-        criteria_work_units = max(1, args.rounds * args.repeats * 4)
+        criteria_work_units = max(1, args.rounds * args.repeats)
         _log(
             log_enabled,
             (
                 f"Criteria phase finished in {criteria_seconds:.2f}s "
-                f"({criteria_seconds / criteria_work_units:.4f}s per criterion-round unit)"
+                f"({criteria_seconds / criteria_work_units:.4f}s per round unit)"
             ),
         )
 
