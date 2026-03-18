@@ -6,7 +6,7 @@ aggregations: [asymptotic, timing]
 
 base_run:
   mode: asymptotic
-  dataset: dataset2
+  dataset: consistency
   agent_counts: [50, 100, 150, 200, 250, 300, 350, 400, 450, 500]
   repeats: 1
   n_jobs: 1

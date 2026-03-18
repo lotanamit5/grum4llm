@@ -8,7 +8,7 @@ import numpy as np
 
 from grums.core.parameters import GRUMParameters
 from grums.experiments.metrics import personalized_mean_kendall_tau, raw_mean_kendall_tau
-from grums.experiments.synthetic_data import make_dataset_2
+from grums.experiments.synthetic_data import make_dataset_1, make_dataset_2, make_dataset_consistency
 from grums.inference import MCEMConfig, MCEMInference
 
 
@@ -27,6 +27,7 @@ def run_personalized_asymptotic(
     agent_counts: list[int],
     repeats: int = 3,
     seed: int = 0,
+    dataset: str = "dataset2",
     mcem_config: MCEMConfig | None = None,
 ) -> list[PersonalizedPoint]:
     """Personalized-choice analogue of asymptotic social-choice runner."""
@@ -38,7 +39,13 @@ def run_personalized_asymptotic(
         taus: list[float] = []
         raw_taus: list[float] = []
         for r in range(repeats):
-            data = make_dataset_2(n_agents=max(agent_counts), seed=seed + r)
+            if dataset == "consistency":
+                data = make_dataset_consistency(n_agents=max(agent_counts), seed=seed + r)
+            elif dataset == "dataset1":
+                data = make_dataset_1(n_agents=max(agent_counts), seed=seed + r)
+            else:
+                data = make_dataset_2(n_agents=max(agent_counts), seed=seed + r)
+                
             init = _default_initial_params(
                 m=data.params_true.n_alternatives,
                 k=data.agent_features.shape[1],

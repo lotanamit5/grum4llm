@@ -93,3 +93,23 @@ def make_dataset_2(
         delta_scale=1.0,
     )
     return _generate_dataset(config, seed)
+
+
+def make_dataset_consistency(
+    n_agents: int = 100,
+    n_alternatives: int = 5,
+    n_agent_features: int = 2,
+    n_alternative_features: int = 2,
+    seed: int = 0,
+) -> SyntheticDataset:
+    """Generic dataset for consistency tests (Fig 2 and Fig 6) with sigma=1 and delta_scale=1."""
+
+    config = SyntheticDatasetConfig(
+        n_agents=n_agents,
+        n_alternatives=n_alternatives,
+        n_agent_features=n_agent_features,
+        n_alternative_features=n_alternative_features,
+        sigma_noise=1.0,
+        delta_scale=1.0,
+    )
+    return _generate_dataset(config, seed)

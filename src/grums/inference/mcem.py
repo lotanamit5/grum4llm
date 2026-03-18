@@ -177,7 +177,7 @@ class MCEMInference:
         rows: list[np.ndarray] = []
         for x in agent_features:
             for z in alternative_features:
-                rows.append(np.kron(z, x))
+                rows.append(np.kron(x, z))
         design = np.vstack(rows)
 
         ridge = lam * sigma2 * np.eye(k * l)

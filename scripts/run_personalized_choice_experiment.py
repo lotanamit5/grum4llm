@@ -81,8 +81,8 @@ def _normalize_config(raw: dict[str, Any]) -> dict[str, Any]:
         raise ValueError("mode must be one of: asymptotic, criteria, both")
     if "criterion" in normalized and normalized["criterion"] not in {"random", "d_opt", "e_opt", "social", "personalized"}:
         raise ValueError("criterion must be one of: random, d_opt, e_opt, social, personalized")
-    if "dataset" in normalized and normalized["dataset"] not in {"dataset1", "dataset2"}:
-        raise ValueError("dataset must be one of: dataset1, dataset2")
+    if "dataset" in normalized and normalized["dataset"] not in {"consistency", "dataset1", "dataset2"}:
+        raise ValueError("dataset must be one of: consistency, dataset1, dataset2")
 
     for key in [
         "repeats",
@@ -142,7 +142,7 @@ def main(argv: list[str] | None = None) -> None:
     parser.add_argument("--config", type=str, default=pre_args.config, help="Path to YAML run config")
     parser.add_argument("--mode", choices=["asymptotic", "criteria", "both"], default=defaults["mode"])
     parser.add_argument("--criterion", choices=["random", "d_opt", "e_opt", "social", "personalized"], default=defaults["criterion"])
-    parser.add_argument("--dataset", choices=["dataset1", "dataset2"], default=defaults["dataset"])
+    parser.add_argument("--dataset", choices=["consistency", "dataset1", "dataset2"], default=defaults["dataset"])
     parser.add_argument("--agent-counts", default=defaults["agent_counts"])
     parser.add_argument("--repeats", type=int, default=defaults["repeats"])
     parser.add_argument("--rounds", type=int, default=defaults["rounds"])
@@ -207,6 +207,7 @@ def main(argv: list[str] | None = None) -> None:
             agent_counts=counts,
             repeats=args.repeats,
             seed=args.seed,
+            dataset=args.dataset,
             mcem_config=cfg,
         )
         
