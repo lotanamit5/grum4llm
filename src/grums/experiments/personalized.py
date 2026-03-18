@@ -7,7 +7,7 @@ from dataclasses import dataclass
 import numpy as np
 
 from grums.core.parameters import GRUMParameters
-from grums.experiments.metrics import personalized_mean_kendall_tau
+from grums.experiments.metrics import personalized_mean_kendall_tau, raw_mean_kendall_tau
 from grums.experiments.synthetic_data import make_dataset_2
 from grums.inference import MCEMConfig, MCEMInference
 
@@ -16,6 +16,7 @@ from grums.inference import MCEMConfig, MCEMInference
 class PersonalizedPoint:
     n_agents: int
     mean_tau: float
+    raw_mean_tau: float = 0.0
 
 
 def _default_initial_params(m: int, k: int, l: int) -> GRUMParameters:
@@ -35,6 +36,7 @@ def run_personalized_asymptotic(
 
     for n in agent_counts:
         taus: list[float] = []
+        raw_taus: list[float] = []
         for r in range(repeats):
             data = make_dataset_2(n_agents=max(agent_counts), seed=seed + r)
             init = _default_initial_params(
@@ -58,6 +60,14 @@ def run_personalized_asymptotic(
             )
             taus.append(tau)
 
-        points.append(PersonalizedPoint(n_agents=n, mean_tau=float(np.mean(taus))))
+            raw_tau = raw_mean_kendall_tau(
+                params_true=data.params_true,
+                agent_features=data.agent_features,
+                alternative_features=data.alternative_features,
+                observed_rankings=list(data.rankings[:n]),
+            )
+            raw_taus.append(raw_tau)
+
+        points.append(PersonalizedPoint(n_agents=n, mean_tau=float(np.mean(taus)), raw_mean_tau=float(np.mean(raw_taus))))
 
     return points

@@ -39,6 +39,25 @@ def personalized_mean_kendall_tau(
     return float(np.mean(taus))
 
 
+def raw_mean_kendall_tau(
+    params_true: GRUMParameters,
+    agent_features: np.ndarray,
+    alternative_features: np.ndarray,
+    observed_rankings: list[np.ndarray],
+) -> float:
+    """Average per-agent Kendall tau between true deterministic rankings and raw observed rankings."""
+
+    true_rankings = predict_deterministic_rankings(params_true, agent_features, alternative_features)
+
+    taus: list[float] = []
+    # Observed rankings might be a subset of total agents
+    for r_true, r_obs in zip(true_rankings[:len(observed_rankings)], observed_rankings, strict=True):
+        tau, _ = kendalltau(r_true, r_obs)
+        taus.append(0.0 if np.isnan(tau) else float(tau))
+
+    return float(np.mean(taus))
+
+
 def moving_average(series: np.ndarray, window: int) -> np.ndarray:
     """Simple trailing moving average used for smoothed report curves."""
 
