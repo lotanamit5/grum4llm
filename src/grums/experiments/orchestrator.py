@@ -8,6 +8,7 @@ import sys
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from dataclasses import dataclass
 from datetime import datetime, timezone
+from itertools import product
 from pathlib import Path
 from statistics import mean, pstdev
 from typing import Any, Callable
@@ -19,6 +20,7 @@ import yaml
 class SubrunSpec:
     run_index: int
     seed: int
+    sweep_overrides: dict[str, Any]
     config_path: Path
     output_path: Path
     log_path: Path
@@ -28,6 +30,7 @@ class SubrunSpec:
 class SubrunResult:
     run_index: int
     seed: int
+    sweep_overrides: dict[str, Any]
     config_path: Path
     output_path: Path
     log_path: Path
@@ -69,6 +72,61 @@ def _parse_seed_values(seed_cfg: Any) -> list[int]:
     return out
 
 
+def _parse_sweep_values(raw: Any, key_path: str) -> list[Any]:
+    if isinstance(raw, list):
+        values = list(raw)
+    elif isinstance(raw, str):
+        values = [v.strip() for v in raw.split(",") if v.strip()]
+    elif isinstance(raw, dict):
+        start = int(raw.get("start", 0))
+        stop = int(raw.get("stop", 0))
+        step = int(raw.get("step", 1))
+        if step <= 0:
+            raise ValueError(f"{key_path}.step must be positive")
+        if stop < start:
+            raise ValueError(f"{key_path}.stop must be >= start")
+        values = list(range(start, stop + 1, step))
+    else:
+        values = [raw]
+
+    if not values:
+        raise ValueError(f"{key_path} must contain at least one value")
+    return values
+
+
+def _parse_sweep_parameters(raw: Any) -> dict[str, list[Any]]:
+    if raw is None:
+        return {}
+    if not isinstance(raw, dict):
+        raise ValueError("sweep.parameters must be a mapping")
+
+    parsed: dict[str, list[Any]] = {}
+    for key, value in raw.items():
+        if not isinstance(key, str) or not key.strip():
+            raise ValueError("sweep.parameters keys must be non-empty strings")
+        parsed[key] = _parse_sweep_values(value, f"sweep.parameters.{key}")
+    return parsed
+
+
+def _sanitize_name_token(value: Any) -> str:
+    text = str(value)
+    token = "".join(ch if ch.isalnum() or ch in {"-", "_"} else "-" for ch in text)
+    token = token.strip("-")
+    return token or "value"
+
+
+def _expand_sweep_overrides(sweep_parameters: dict[str, list[Any]]) -> list[dict[str, Any]]:
+    if not sweep_parameters:
+        return [{}]
+
+    keys = list(sweep_parameters.keys())
+    value_lists = [sweep_parameters[k] for k in keys]
+    combos: list[dict[str, Any]] = []
+    for combo_values in product(*value_lists):
+        combos.append(dict(zip(keys, combo_values)))
+    return combos
+
+
 def load_orchestration_config(config_path: Path) -> dict[str, Any]:
     raw = yaml.safe_load(config_path.read_text(encoding="utf-8"))
     if not isinstance(raw, dict):
@@ -88,6 +146,7 @@ def load_orchestration_config(config_path: Path) -> dict[str, Any]:
         raise ValueError("sweep must be a mapping")
 
     seeds = _parse_seed_values(sweep.get("seeds", []))
+    sweep_parameters = _parse_sweep_parameters(sweep.get("parameters", {}))
 
     aggregations = raw.get("aggregations", ["asymptotic", "criteria", "timing"])
     if not isinstance(aggregations, list) or not all(isinstance(v, str) for v in aggregations):
@@ -105,6 +164,7 @@ def load_orchestration_config(config_path: Path) -> dict[str, Any]:
         "worker_script": worker_script,
         "base_run": dict(base_run),
         "seed_values": seeds,
+        "sweep_parameters": sweep_parameters,
         "max_parallel_subprocesses": max_parallel,
         "aggregations": aggregations,
     }
@@ -125,28 +185,44 @@ def create_run_folder(output_root: Path, run_prefix: str) -> Path:
     return run_dir
 
 
-def build_subrun_specs(run_dir: Path, base_run: dict[str, Any], seeds: list[int]) -> list[SubrunSpec]:
+def build_subrun_specs(
+    run_dir: Path,
+    base_run: dict[str, Any],
+    seeds: list[int],
+    sweep_parameters: dict[str, list[Any]] | None = None,
+) -> list[SubrunSpec]:
     specs: list[SubrunSpec] = []
+    sweep_overrides = _expand_sweep_overrides(sweep_parameters or {})
+    run_index = 0
 
-    for idx, seed in enumerate(seeds):
-        out_path = run_dir / "outputs" / f"run_{idx:03d}_seed_{seed}.json"
-        cfg_path = run_dir / "subconfigs" / f"run_{idx:03d}_seed_{seed}.yml"
-        log_path = run_dir / "logs" / f"run_{idx:03d}_seed_{seed}.log"
+    for overrides in sweep_overrides:
+        for seed in seeds:
+            suffix_parts = [f"seed_{_sanitize_name_token(seed)}"]
+            for key, value in overrides.items():
+                suffix_parts.append(f"{_sanitize_name_token(key)}_{_sanitize_name_token(value)}")
+            suffix = "_".join(suffix_parts)
 
-        sub_cfg = dict(base_run)
-        sub_cfg["seed"] = seed
-        sub_cfg["output_json"] = str(out_path)
+            out_path = run_dir / "outputs" / f"run_{run_index:03d}_{suffix}.json"
+            cfg_path = run_dir / "subconfigs" / f"run_{run_index:03d}_{suffix}.yml"
+            log_path = run_dir / "logs" / f"run_{run_index:03d}_{suffix}.log"
 
-        cfg_path.write_text(yaml.safe_dump(sub_cfg, sort_keys=False), encoding="utf-8")
-        specs.append(
-            SubrunSpec(
-                run_index=idx,
-                seed=seed,
-                config_path=cfg_path,
-                output_path=out_path,
-                log_path=log_path,
+            sub_cfg = dict(base_run)
+            sub_cfg.update(overrides)
+            sub_cfg["seed"] = seed
+            sub_cfg["output_json"] = str(out_path)
+
+            cfg_path.write_text(yaml.safe_dump(sub_cfg, sort_keys=False), encoding="utf-8")
+            specs.append(
+                SubrunSpec(
+                    run_index=run_index,
+                    seed=seed,
+                    sweep_overrides=dict(overrides),
+                    config_path=cfg_path,
+                    output_path=out_path,
+                    log_path=log_path,
+                )
             )
-        )
+            run_index += 1
 
     return specs
 
@@ -184,6 +260,7 @@ def _run_subprocess_spec(spec: SubrunSpec, worker_script: Path, workspace_root: 
     return SubrunResult(
         run_index=spec.run_index,
         seed=spec.seed,
+        sweep_overrides=dict(spec.sweep_overrides),
         config_path=spec.config_path,
         output_path=spec.output_path,
         log_path=spec.log_path,
@@ -362,6 +439,7 @@ def run_orchestration(orchestration_config_path: Path, workspace_root: Path) -> 
         run_dir=run_dir,
         base_run=loaded["base_run"],
         seeds=loaded["seed_values"],
+        sweep_parameters=loaded["sweep_parameters"],
     )
 
     metadata: dict[str, Any] = {
@@ -373,6 +451,7 @@ def run_orchestration(orchestration_config_path: Path, workspace_root: Path) -> 
         "max_parallel_subprocesses": loaded["max_parallel_subprocesses"],
         "aggregations": loaded["aggregations"],
         "seed_values": loaded["seed_values"],
+        "sweep_parameters": loaded["sweep_parameters"],
         "subruns": [],
     }
 
@@ -389,6 +468,7 @@ def run_orchestration(orchestration_config_path: Path, workspace_root: Path) -> 
             {
                 "run_index": res.run_index,
                 "seed": res.seed,
+                "sweep_overrides": dict(res.sweep_overrides),
                 "status": res.status,
                 "exit_code": res.exit_code,
                 "duration_seconds": res.duration_seconds,

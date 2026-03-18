@@ -6,6 +6,7 @@ import sys
 from pathlib import Path
 
 from grums.experiments.orchestrator import (
+    build_subrun_specs,
     load_orchestration_config,
     run_aggregations_for_json_paths,
 )
@@ -36,6 +37,60 @@ def test_load_orchestration_config_parses_seed_range(tmp_path: Path) -> None:
     parsed = load_orchestration_config(cfg)
     assert parsed["seed_values"] == [1, 2, 3]
     assert parsed["run_prefix"] == "fig2-repro"
+
+
+def test_load_orchestration_config_parses_sweep_parameters(tmp_path: Path) -> None:
+    cfg = tmp_path / "orch_params.yml"
+    cfg.write_text(
+        "\n".join(
+            [
+                "run_prefix: crit-repro",
+                "output_root: results/repro",
+                "base_run:",
+                "  mode: criteria",
+                "  dataset: dataset2",
+                "  repeats: 1",
+                "sweep:",
+                "  seeds: [0, 1]",
+                "  parameters:",
+                "    rounds: [5, 10]",
+                "    dataset: [dataset1, dataset2]",
+            ]
+        ),
+        encoding="utf-8",
+    )
+
+    parsed = load_orchestration_config(cfg)
+    assert parsed["seed_values"] == [0, 1]
+    assert parsed["sweep_parameters"] == {
+        "rounds": [5, 10],
+        "dataset": ["dataset1", "dataset2"],
+    }
+
+
+def test_build_subrun_specs_cartesian_product_overrides(tmp_path: Path) -> None:
+    run_dir = tmp_path / "run"
+    for child in ["subconfigs", "outputs", "logs"]:
+        (run_dir / child).mkdir(parents=True, exist_ok=True)
+
+    specs = build_subrun_specs(
+        run_dir=run_dir,
+        base_run={"mode": "criteria", "repeats": 1},
+        seeds=[0, 1],
+        sweep_parameters={"rounds": [5, 10]},
+    )
+
+    assert len(specs) == 4
+    assert [s.run_index for s in specs] == [0, 1, 2, 3]
+    assert {s.seed for s in specs} == {0, 1}
+    assert {s.sweep_overrides.get("rounds") for s in specs} == {5, 10}
+
+    for spec in specs:
+        assert spec.config_path.exists()
+        text = spec.config_path.read_text(encoding="utf-8")
+        assert f"seed: {spec.seed}" in text
+        assert f"rounds: {spec.sweep_overrides['rounds']}" in text
+        assert str(spec.output_path) in text
 
 
 def test_orchestration_smoke_creates_mapped_subconfigs_outputs_and_aggregates(tmp_path: Path) -> None:
