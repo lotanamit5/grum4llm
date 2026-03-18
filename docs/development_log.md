@@ -45,3 +45,7 @@ Implemented dataset-selectable social-choice runners (`dataset1`/`dataset2`), CL
 ## Stage B.1 - CPU Parallelization for Reproduction Sweeps
 
 Added process-based parallel execution for repeat-level workloads in both asymptotic and criteria social-choice benchmarks, exposed via `n_jobs` in CLI and YAML configs with strict validation (`n_jobs > 0`). Added deterministic equivalence tests showing serial and parallel runs match for fixed seeds, enabling high-core-count servers (for example 256/512 CPUs) to accelerate full reproduction sweeps without changing statistical outputs.
+
+## Stage B.2 - Orchestration Runs with Per-Subconfig Traceability
+
+Implemented a separate orchestration pipeline driven by a single YAML file that creates timestamped run folders, generates one subconfig and one output JSON per seed/subrun, executes each subrun through isolated subprocess calls to the single-run worker CLI, and records full config-to-output mappings plus per-subrun logs in metadata for debugging. Added modular aggregation functions (`asymptotic`, `criteria`, `timing`) that can be called independently on any set of existing JSON outputs, enabling re-aggregation of historical runs without rerunning experiments.

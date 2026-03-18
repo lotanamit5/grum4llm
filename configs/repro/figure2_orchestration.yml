@@ -1,0 +1,27 @@
+run_prefix: fig2-repro
+output_root: results/repro
+worker_script: scripts/run_social_choice_experiment.py
+max_parallel_subprocesses: 4
+aggregations: [asymptotic, criteria, timing]
+
+base_run:
+  mode: asymptotic
+  dataset: dataset2
+  agent_counts: [50, 100, 150, 200, 250, 300, 350, 400, 450, 500]
+  repeats: 1
+  n_jobs: 1
+  iterations: 6
+  gibbs_samples: 25
+  gibbs_burnin: 12
+  sigma: 1.0
+  prior_precision: 0.01
+  tolerance: 1.0e-5
+  random_seed: 0
+  quiet: true
+  no_progress: true
+
+sweep:
+  seeds:
+    start: 0
+    stop: 19
+    step: 1
