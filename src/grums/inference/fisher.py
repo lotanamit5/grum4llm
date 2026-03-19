@@ -13,7 +13,7 @@ FloatArray = NDArray[np.float64]
 def _param_design_row(agent_x: FloatArray, alt_z: FloatArray, alt_idx: int, m: int) -> FloatArray:
     row = np.zeros(m + (agent_x.shape[0] * alt_z.shape[0]), dtype=float)
     row[alt_idx] = 1.0
-    row[m:] = np.kron(alt_z, agent_x)
+    row[m:] = np.kron(agent_x, alt_z)
     return row
 
 

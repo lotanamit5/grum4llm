@@ -60,3 +60,18 @@ def test_personalized_asymptotic_is_seed_stable() -> None:
     b = run_personalized_asymptotic([5, 10], repeats=2, seed=4, mcem_config=cfg)
 
     assert [(p.n_agents, p.mean_tau) for p in a] == [(p.n_agents, p.mean_tau) for p in b]
+
+def test_personalized_compare_criteria_is_seed_stable() -> None:
+    from grums.experiments.personalized import compare_criteria_personalized_choice
+    
+    cfg = MCEMConfig(n_iterations=2, n_gibbs_samples=10, n_gibbs_burnin=5, random_seed=13)
+    
+    a = compare_criteria_personalized_choice(
+        dataset="dataset1", n_rounds=2, repeats=2, criterion_name="personalized", seed=4, mcem_config=cfg
+    )
+    b = compare_criteria_personalized_choice(
+        dataset="dataset1", n_rounds=2, repeats=2, criterion_name="personalized", seed=4, mcem_config=cfg
+    )
+    
+    assert a == b
+

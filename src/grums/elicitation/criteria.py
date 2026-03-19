@@ -112,7 +112,7 @@ class PersonalizedChoiceCriterion:
                     grad = np.zeros(expected_len, dtype=float)
                     grad[j1] = 1.0
                     grad[j2] = -1.0
-                    grad[self.n_alternatives :] = np.kron(z1 - z2, x)
+                    grad[self.n_alternatives :] = np.kron(x, z1 - z2)
 
                     diff_var = float(grad @ covariance @ grad)
                     diff_std = np.sqrt(max(diff_var, self.min_variance))

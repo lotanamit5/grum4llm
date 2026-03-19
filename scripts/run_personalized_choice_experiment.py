@@ -235,9 +235,44 @@ def main(argv: list[str] | None = None) -> None:
         )
         t0 = perf_counter()
         
-        # TODO in step 4.1: Implement compare_criteria_personalized_choice and call it here.
-        raise NotImplementedError("Criteria mode for personalized choice is not yet implemented.")
+        from grums.experiments.personalized import compare_criteria_personalized_choice
+        
+        def _update(done: int) -> None:
+            if not args.no_progress and tqdm is not None:
+                pbar.update(done)
 
+        total_work = args.repeats
+        pbar = None
+        if not args.no_progress and tqdm is not None:
+            pbar = tqdm(total=total_work, desc=f"Criteria={args.criterion}", dynamic_ncols=True)
+
+        try:
+            mean_score = compare_criteria_personalized_choice(
+                dataset=args.dataset,
+                n_rounds=args.rounds,
+                repeats=args.repeats,
+                criterion_name=args.criterion,
+                seed=args.seed,
+                mcem_config=cfg,
+                n_jobs=args.n_jobs,
+                progress_update=_update,
+            )
+        finally:
+            if pbar is not None:
+                pbar.close()
+
+        crit_seconds = perf_counter() - t0
+        timing["criteria_seconds"] = crit_seconds
+        payload["criteria"] = {args.criterion: mean_score}
+
+        _log(
+            log_enabled,
+            (
+                f"Criteria phase finished in {crit_seconds:.2f}s "
+                f"(score={mean_score:.4f})"
+            ),
+        )
+    
     total_seconds = perf_counter() - run_start
     timing["total_seconds"] = total_seconds
     payload["timing"] = timing
