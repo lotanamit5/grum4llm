@@ -15,6 +15,11 @@ from typing import Any, Callable
 
 import yaml
 
+try:
+    from tqdm.auto import tqdm as _tqdm
+except Exception:  # pragma: no cover
+    _tqdm = None  # type: ignore[assignment]
+
 
 @dataclass(frozen=True)
 class SubrunSpec:
@@ -427,7 +432,11 @@ def run_aggregations_for_run_folder(run_dir: Path, aggregation_names: list[str])
     )
 
 
-def run_orchestration(orchestration_config_path: Path, workspace_root: Path) -> Path:
+def run_orchestration(
+    orchestration_config_path: Path,
+    workspace_root: Path,
+    show_progress: bool = True,
+) -> Path:
     loaded = load_orchestration_config(orchestration_config_path)
 
     run_dir = create_run_folder(
@@ -460,10 +469,19 @@ def run_orchestration(orchestration_config_path: Path, workspace_root: Path) -> 
     }
 
     results: list[SubrunResult] = []
-    with ThreadPoolExecutor(max_workers=loaded["max_parallel_subprocesses"]) as ex:
-        futures = [ex.submit(_run_subprocess_spec, spec, worker_script, workspace_root) for spec in specs]
-        for fut in as_completed(futures):
-            results.append(fut.result())
+    pbar = None
+    if show_progress and _tqdm is not None:
+        pbar = _tqdm(total=len(specs), desc="Subruns", unit="run")
+    try:
+        with ThreadPoolExecutor(max_workers=loaded["max_parallel_subprocesses"]) as ex:
+            futures = [ex.submit(_run_subprocess_spec, spec, worker_script, workspace_root) for spec in specs]
+            for fut in as_completed(futures):
+                results.append(fut.result())
+                if pbar is not None:
+                    pbar.update(1)
+    finally:
+        if pbar is not None:
+            pbar.close()
 
     results = sorted(results, key=lambda r: r.run_index)
 
