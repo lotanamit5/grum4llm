@@ -157,8 +157,8 @@ def load_orchestration_config(config_path: Path) -> dict[str, Any]:
     if not isinstance(aggregations, list) or not all(isinstance(v, str) for v in aggregations):
         raise ValueError("aggregations must be a list of strings")
 
-    max_parallel = int(raw.get("max_parallel_subprocesses", 1))
-    if max_parallel <= 0:
+    max_parallel = raw.get("max_parallel_subprocesses", None)
+    if max_parallel and int(max_parallel) <= 0:
         raise ValueError("max_parallel_subprocesses must be positive")
 
     worker_script = str(raw.get("worker_script", "scripts/run_social_choice_experiment.py"))

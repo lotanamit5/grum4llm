@@ -1,7 +1,7 @@
 run_prefix: fig3-dataset2-repro
 output_root: results/repro
 worker_script: scripts/run_social_choice_experiment.py
-max_parallel_subprocesses: 4
+max_parallel_subprocesses: 128
 aggregations: [criteria, timing]
 
 base_run:
