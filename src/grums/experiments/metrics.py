@@ -20,6 +20,25 @@ def social_choice_kendall_tau(delta_true: np.ndarray, delta_est: np.ndarray) -> 
     return float(tau)
 
 
+def social_choice_suboptimality(
+    params_true: "GRUMParameters",
+    params_est: "GRUMParameters",
+    agent_features: np.ndarray,
+    alternative_features: np.ndarray,
+) -> float:
+    """Kendall tau between social-choice rankings from full GRUMParameters.
+
+    Convenience wrapper over ``social_choice_kendall_tau`` for callers (e.g. the
+    sushi experiment) that hold full parameter objects rather than bare delta arrays.
+    The ``agent_features`` and ``alternative_features`` arguments are accepted for
+    API symmetry with ``personalized_mean_kendall_tau`` but are not used, since
+    social-choice quality depends only on the marginal ``delta`` vector.
+    """
+    _ = agent_features
+    _ = alternative_features
+    return social_choice_kendall_tau(params_true.delta, params_est.delta)
+
+
 def personalized_mean_kendall_tau(
     params_true: GRUMParameters,
     params_est: GRUMParameters,

@@ -9,8 +9,7 @@ from concurrent.futures import ProcessPoolExecutor, as_completed
 from typing import Callable
 
 from grums.contracts import AgentRecord, AlternativeRecord, RankingObservation
-from grums.experiments.sushi import SushiDataset
-from grums.datasets.sushi import load_sushi
+from grums.datasets.sushi import load_sushi, SushiDataset
 from grums.inference import MCEMConfig, MCEMInference
 from grums.elicitation import (
     AdaptiveElicitationEngine,
