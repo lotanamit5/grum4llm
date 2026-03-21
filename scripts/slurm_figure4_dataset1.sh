@@ -2,9 +2,7 @@
 #SBATCH --job-name=grums-fig4-d1
 #SBATCH --output=out/fig4-d1_%j.out
 #SBATCH --error=err/fig4-d1_%j.err
-#SBATCH --time=8:00:00
-#SBATCH --mem=16G
-#SBATCH --cpus-per-task=60
+#SBATCH --cpus-per-task=64
 
 set -e
 set -o pipefail
