@@ -5,7 +5,7 @@ import json
 import subprocess
 import sys
 from pathlib import Path
-from unittest.mock import patch, MagicMock
+from unittest.mock import patch
 
 import numpy as np
 import pytest
@@ -86,33 +86,53 @@ def test_runner_script_produces_valid_json(tmp_path: Path) -> None:
     assert isinstance(payload["criteria"]["random"], float)
 
 
+def _load_sushi_runner_fresh(module_name: str = "sushi_runner_criteria_test"):
+    """Load run_sushi_experiment.py as a module (subprocess would not see unittest.mock patches)."""
+    import importlib.util
+
+    if module_name in sys.modules:
+        del sys.modules[module_name]
+    spec = importlib.util.spec_from_file_location(module_name, SCRIPT)
+    assert spec and spec.loader
+    mod = importlib.util.module_from_spec(spec)
+    sys.modules[module_name] = mod
+    spec.loader.exec_module(mod)
+    return mod
+
+
 def test_runner_script_cli_recognises_all_criteria(tmp_path: Path) -> None:
     """Verify the script accepts all valid criterion names."""
-    for criterion in ["random", "d_opt", "e_opt", "social", "personalized"]:
-        out = tmp_path / f"result_{criterion}.json"
-        proc = subprocess.run(
-            [
-                sys.executable, str(SCRIPT),
-                "--criterion", criterion,
-                "--metric", "social",
-                "--repeats", "1",
-                "--rounds", "1",
-                "--iterations", "0",
-                "--gibbs-samples", "4",
-                "--gibbs-burnin", "2",
-                "--n-jobs", "1",
-                "--output-json", str(out),
-                "--quiet",
-                "--no-progress",
-            ],
-            capture_output=True,
-            text=True,
-        )
-        assert proc.returncode == 0, (
-            f"Failed for criterion '{criterion}':\n{proc.stderr}"
-        )
-        payload = json.loads(out.read_text(encoding="utf-8"))
-        assert criterion in payload["criteria"]
+    with patch("grums.experiments.sushi.compare_criteria_sushi_choice", return_value=0.42):
+        mod = _load_sushi_runner_fresh()
+        for criterion in ["random", "d_opt", "e_opt", "social", "personalized"]:
+            out = tmp_path / f"result_{criterion}.json"
+            mod.main(
+                [
+                    "--criterion",
+                    criterion,
+                    "--metric",
+                    "social",
+                    "--repeats",
+                    "1",
+                    "--rounds",
+                    "1",
+                    "--iterations",
+                    "0",
+                    "--gibbs-samples",
+                    "4",
+                    "--gibbs-burnin",
+                    "2",
+                    "--n-jobs",
+                    "1",
+                    "--output-json",
+                    str(out),
+                    "--quiet",
+                    "--no-progress",
+                ]
+            )
+            payload = json.loads(out.read_text(encoding="utf-8"))
+            assert criterion in payload["criteria"]
+            assert payload["criteria"][criterion] == 0.42
 
 
 def test_runner_script_config_file(tmp_path: Path) -> None:

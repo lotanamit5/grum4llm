@@ -1,4 +1,5 @@
 # local folders to ignore
+.venv/
 env/
 data/
 results/

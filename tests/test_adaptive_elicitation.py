@@ -5,7 +5,7 @@ import numpy as np
 from grums.contracts import AgentRecord, AlternativeRecord, PreferenceProvider, RankingObservation
 from grums.core import GRUMParameters
 from grums.elicitation import AdaptiveElicitationEngine
-from grums.inference import MCEMConfig
+from grums.inference import MCEMConfig, MCEMInference
 
 
 class TraceCriterion:
@@ -94,6 +94,55 @@ def test_engine_updates_observations_and_history_across_rounds() -> None:
     assert len(result.history) == 2
     assert len(result.observations) == 3
     assert result.history[-1].n_observations == 3
+
+
+def test_final_params_match_standalone_map_on_all_observations() -> None:
+    """Returned MAP must use every observation, including the last elicited one."""
+    alternatives, seed_agent, initial_obs, candidates, init_params = _fixture_data()
+    cfg = MCEMConfig(n_iterations=2, n_gibbs_samples=15, n_gibbs_burnin=10, random_seed=11)
+
+    provider = MockProvider()
+    engine = AdaptiveElicitationEngine(criterion=TraceCriterion(), mcem_config=cfg)
+    result = engine.run(
+        provider=provider,
+        initial_params=init_params,
+        initial_observations=initial_obs,
+        observed_agents=[seed_agent],
+        candidate_agents=candidates,
+        alternatives=alternatives,
+        n_rounds=1,
+    )
+
+    assert len(result.observations) == 2
+    alt_sorted = sorted(alternatives, key=lambda a: a.alternative_id)
+    alt_features = np.vstack([a.features for a in alt_sorted])
+    seed_ranking = initial_obs[0].ranking
+    seed_feat = np.vstack([seed_agent.features])
+    inf = MCEMInference(cfg)
+    mid = inf.fit_map(
+        initial_params=init_params,
+        rankings=[seed_ranking],
+        agent_features=seed_feat,
+        alternative_features=alt_features,
+    )
+    agents_aligned = []
+    for obs in result.observations:
+        if obs.agent_id == "seed":
+            agents_aligned.append(seed_agent)
+        else:
+            agents_aligned.append(next(a for a in candidates if a.agent_id == obs.agent_id))
+    agent_features = np.vstack([a.features for a in agents_aligned])
+    rankings = [o.ranking for o in result.observations]
+
+    ref = inf.fit_map(
+        initial_params=mid.params,
+        rankings=rankings,
+        agent_features=agent_features,
+        alternative_features=alt_features,
+    )
+
+    np.testing.assert_allclose(result.final_params.delta, ref.params.delta, rtol=1e-5, atol=1e-5)
+    np.testing.assert_allclose(result.final_params.interaction, ref.params.interaction, rtol=1e-5, atol=1e-5)
 
 
 def test_engine_rejects_missing_initial_data() -> None:

@@ -134,6 +134,20 @@ class AdaptiveElicitationEngine:
                 )
             )
 
+        # MAP on full D: in-loop fit runs before each new query, so the last elicited
+        # ranking is only incorporated here (and n_rounds=0 still gets a MAP on seed data).
+        if observations:
+            aligned_agents = [observed_lookup[o.agent_id] for o in observations]
+            agent_features = np.vstack([a.features for a in aligned_agents])
+            rankings = [o.ranking for o in observations]
+            final_fit = self.inference.fit_map(
+                initial_params=params,
+                rankings=rankings,
+                agent_features=agent_features,
+                alternative_features=alternative_features,
+            )
+            params = final_fit.params
+
         return AdaptiveElicitationResult(
             final_params=params,
             observations=tuple(observations),
