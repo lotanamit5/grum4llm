@@ -1,7 +1,7 @@
 run_prefix: fig6-repro
 output_root: results/repro
 worker_script: scripts/run_personalized_choice_experiment.py
-max_parallel_subprocesses: 4
+max_parallel_subprocesses: 32
 aggregations: [asymptotic, timing]
 
 base_run:

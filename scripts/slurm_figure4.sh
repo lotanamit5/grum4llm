@@ -1,8 +1,9 @@
 #!/usr/bin/env bash
-# Match configs/repro/figure6_orchestration.yml max_parallel_subprocesses to Slurm CPUs.
-#SBATCH --job-name=grums-fig6
-#SBATCH --output=logs/slurm/fig6_%j.out
-#SBATCH --error=logs/slurm/fig6_%j.err
+# Parallelism: match configs/repro/figure4_* max_parallel_subprocesses to --cpus-per-task.
+# Multi-node sharding: same pattern as scripts/slurm_figure3.sh (seed-range split or job array).
+#SBATCH --job-name=grums-fig4
+#SBATCH --output=logs/slurm/fig4_%j.out
+#SBATCH --error=logs/slurm/fig4_%j.err
 #SBATCH --time=8:00:00
 #SBATCH --mem=64G
 #SBATCH --cpus-per-task=32
@@ -25,8 +26,12 @@ conda activate env
 
 mkdir -p logs/slurm
 
-echo "[$(date '+%Y-%m-%d %H:%M:%S')] Starting Figure 6..."
+echo "[$(date '+%Y-%m-%d %H:%M:%S')] Starting Figure 4 (Dataset 1)..."
 python scripts/run_experiment_orchestration.py \
-    --config configs/repro/figure6_orchestration.yml
+    --config configs/repro/figure4_dataset1_orchestration.yml
 
-echo "[$(date '+%Y-%m-%d %H:%M:%S')] Figure 6 complete."
+echo "[$(date '+%Y-%m-%d %H:%M:%S')] Starting Figure 4 (Dataset 2)..."
+python scripts/run_experiment_orchestration.py \
+    --config configs/repro/figure4_dataset2_orchestration.yml
+
+echo "[$(date '+%Y-%m-%d %H:%M:%S')] Figure 4 complete."

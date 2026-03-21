@@ -1,7 +1,7 @@
 run_prefix: criteria-repro
 output_root: results/repro
 worker_script: scripts/run_social_choice_experiment.py
-max_parallel_subprocesses: 4
+max_parallel_subprocesses: 16
 aggregations: [criteria, timing]
 
 base_run:

@@ -4,6 +4,11 @@
 #
 # Each figure runs as a separate SLURM job so they can run in parallel.
 # Logs land in logs/slurm/ inside the repo root.
+#
+# Using two 128-CPU nodes: either let different figures run concurrently (this script), or shard one
+# figure by duplicating its orchestration YAML with disjoint sweep.seeds ranges and submitting two
+# sbatch jobs. Job arrays are also an option if you add a wrapper that maps SLURM_ARRAY_TASK_ID to a
+# seed subrange. Keep orchestration max_parallel_subprocesses <= the job's --cpus-per-task.
 
 set -e
 
