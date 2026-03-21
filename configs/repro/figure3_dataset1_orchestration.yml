@@ -1,13 +1,15 @@
+# Fig. 3 (paper Table 1): random, D-opt, E-opt, proposed social (Eq. 5)—no "personalized" curve.
 run_prefix: fig3-dataset1-repro
 output_root: results/repro
 worker_script: scripts/run_social_choice_experiment.py
 max_parallel_subprocesses: 128
-aggregations: [criteria, timing]
+aggregations: [criteria_curve, timing]
 
 base_run:
-  mode: criteria
+  mode: criteria_curve
   dataset: dataset1
   repeats: 1
+  rounds: 100
   n_jobs: 1
   iterations: 6
   gibbs_samples: 25
@@ -25,8 +27,4 @@ sweep:
     stop: 19
     step: 1
   parameters:
-    criterion: [random, d_opt, e_opt, social, personalized]
-    rounds:
-      start: 1
-      stop: 100
-      step: 1
+    criterion: [random, d_opt, e_opt, social]

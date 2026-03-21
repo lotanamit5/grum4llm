@@ -96,6 +96,31 @@ def test_engine_updates_observations_and_history_across_rounds() -> None:
     assert result.history[-1].n_observations == 3
 
 
+def test_on_after_map_emits_one_entry_per_distinct_observation_count() -> None:
+    alternatives, seed_agent, initial_obs, candidates, init_params = _fixture_data()
+    seen_n: list[int] = []
+
+    def _cb(n_obs: int, _p) -> None:
+        seen_n.append(n_obs)
+
+    engine = AdaptiveElicitationEngine(
+        criterion=TraceCriterion(),
+        mcem_config=MCEMConfig(n_iterations=2, n_gibbs_samples=15, n_gibbs_burnin=10, random_seed=3),
+    )
+    provider = MockProvider()
+    engine.run(
+        provider=provider,
+        initial_params=init_params,
+        initial_observations=initial_obs,
+        observed_agents=[seed_agent],
+        candidate_agents=candidates,
+        alternatives=alternatives,
+        n_rounds=2,
+        on_after_map=_cb,
+    )
+    assert seen_n == [1, 2, 3]
+
+
 def test_final_params_match_standalone_map_on_all_observations() -> None:
     """Returned MAP must use every observation, including the last elicited one."""
     alternatives, seed_agent, initial_obs, candidates, init_params = _fixture_data()

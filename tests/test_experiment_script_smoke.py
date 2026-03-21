@@ -117,6 +117,44 @@ def test_cli_overrides_config_value(tmp_path: Path) -> None:
     assert payload["repeats"] == 1
 
 
+def test_criteria_curve_mode_writes_curve_payload(tmp_path: Path) -> None:
+    root = Path(__file__).resolve().parents[1]
+    script = root / "scripts" / "run_social_choice_experiment.py"
+    out = tmp_path / "curve.json"
+
+    cmd = [
+        sys.executable,
+        str(script),
+        "--mode",
+        "criteria_curve",
+        "--criterion",
+        "random",
+        "--rounds",
+        "2",
+        "--seed",
+        "1",
+        "--repeats",
+        "1",
+        "--iterations",
+        "0",
+        "--gibbs-samples",
+        "6",
+        "--gibbs-burnin",
+        "3",
+        "--no-progress",
+        "--output-json",
+        str(out),
+    ]
+    subprocess.run(cmd, check=True)
+
+    payload = json.loads(out.read_text(encoding="utf-8"))
+    assert payload["criterion"] == "random"
+    assert "criteria_curve" in payload
+    assert len(payload["criteria_curve"]) >= 2
+    assert "n_observations" in payload["criteria_curve"][0]
+    assert "kendall_tau" in payload["criteria_curve"][0]
+
+
 def test_output_path_creates_parent_directories(tmp_path: Path) -> None:
     root = Path(__file__).resolve().parents[1]
     script = root / "scripts" / "run_social_choice_experiment.py"

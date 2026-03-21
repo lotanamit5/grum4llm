@@ -5,6 +5,8 @@ import subprocess
 import sys
 from pathlib import Path
 
+import pytest
+
 from grums.experiments.orchestrator import (
     build_subrun_specs,
     load_orchestration_config,
@@ -194,3 +196,41 @@ def test_can_reaggregate_old_jsons_with_function_call(tmp_path: Path) -> None:
     assert len(asym["rows"]) == 2
     assert asym["summary"][0]["n_agents"] == 50
     assert asym["summary"][0]["count"] == 2
+
+
+def test_aggregate_criteria_curve_groups_by_criterion_and_n(tmp_path: Path) -> None:
+    outputs = tmp_path / "curve_jsons"
+    agg = tmp_path / "curve_agg"
+    outputs.mkdir(parents=True, exist_ok=True)
+
+    payload_a = {
+        "seed": 0,
+        "criterion": "social",
+        "criteria_curve": [
+            {"n_observations": 1, "kendall_tau": 0.1},
+            {"n_observations": 2, "kendall_tau": 0.2},
+        ],
+        "timing": {"total_seconds": 1.0},
+    }
+    payload_b = {
+        "seed": 1,
+        "criterion": "social",
+        "criteria_curve": [
+            {"n_observations": 1, "kendall_tau": 0.3},
+            {"n_observations": 2, "kendall_tau": 0.4},
+        ],
+        "timing": {"total_seconds": 2.0},
+    }
+    (outputs / "a.json").write_text(json.dumps(payload_a), encoding="utf-8")
+    (outputs / "b.json").write_text(json.dumps(payload_b), encoding="utf-8")
+
+    written = run_aggregations_for_json_paths(
+        json_paths=sorted(outputs.glob("*.json")),
+        output_dir=agg,
+        aggregation_names=["criteria_curve"],
+    )
+    data = json.loads(written["criteria_curve"].read_text(encoding="utf-8"))
+    assert len(data["rows"]) == 4
+    by_n = {row["n_observations"]: row["mean"] for row in data["summary"] if row["criterion"] == "social"}
+    assert by_n[1] == pytest.approx(0.2)
+    assert by_n[2] == pytest.approx(0.3)

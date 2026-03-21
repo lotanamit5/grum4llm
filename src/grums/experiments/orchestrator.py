@@ -365,6 +365,60 @@ def aggregate_criteria(payloads: list[tuple[Path, dict[str, Any]]]) -> dict[str,
     return {"rows": rows, "summary": summary}
 
 
+def aggregate_criteria_curve(payloads: list[tuple[Path, dict[str, Any]]]) -> dict[str, Any]:
+    """Combine per-seed adaptive elicitation curves (Fig. 3 / Fig. 4 reproduction)."""
+
+    rows: list[dict[str, Any]] = []
+    grouped: dict[tuple[str, int], list[float]] = {}
+
+    for file_path, payload in payloads:
+        seed = payload.get("seed")
+        criterion = payload.get("criterion")
+        if criterion is None:
+            crit_block = payload.get("criteria")
+            if isinstance(crit_block, dict) and len(crit_block) == 1:
+                criterion = next(iter(crit_block.keys()))
+        if criterion is None:
+            continue
+
+        curve = payload.get("criteria_curve", [])
+        if not isinstance(curve, list):
+            continue
+        for pt in curve:
+            if not isinstance(pt, dict):
+                continue
+            n_agents = int(pt["n_observations"])
+            value = float(pt["kendall_tau"])
+            rows.append(
+                {
+                    "file": file_path.name,
+                    "seed": seed,
+                    "criterion": str(criterion),
+                    "n_observations": n_agents,
+                    "kendall_tau": value,
+                }
+            )
+            grouped.setdefault((str(criterion), n_agents), []).append(value)
+
+    summary: list[dict[str, Any]] = []
+    for key in sorted(grouped.keys()):
+        crit, n_obs = key
+        values = grouped[key]
+        summary.append(
+            {
+                "criterion": crit,
+                "n_observations": n_obs,
+                "count": len(values),
+                "mean": float(mean(values)),
+                "std": float(pstdev(values)) if len(values) > 1 else 0.0,
+                "min": float(min(values)),
+                "max": float(max(values)),
+            }
+        )
+
+    return {"rows": rows, "summary": summary}
+
+
 def aggregate_timing(payloads: list[tuple[Path, dict[str, Any]]]) -> dict[str, Any]:
     rows: list[dict[str, Any]] = []
     totals: list[float] = []
@@ -397,6 +451,7 @@ def aggregate_timing(payloads: list[tuple[Path, dict[str, Any]]]) -> dict[str, A
 AGGREGATION_FUNCTIONS: dict[str, Callable[[list[tuple[Path, dict[str, Any]]]], dict[str, Any]]] = {
     "asymptotic": aggregate_asymptotic,
     "criteria": aggregate_criteria,
+    "criteria_curve": aggregate_criteria_curve,
     "timing": aggregate_timing,
 }
 

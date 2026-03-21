@@ -1,14 +1,17 @@
+# Fig. 4 reproduction: criterion "social" = Eq. (5) on δ (paper's personalized-plot ablation).
+# Criterion "personalized" = PersonalizedChoiceCriterion (Eq. 6-style); see paper §6.2.
 run_prefix: fig4-dataset2-repro
 output_root: results/repro
 worker_script: scripts/run_personalized_choice_experiment.py
-max_parallel_subprocesses: 32
-aggregations: [criteria, timing]
+max_parallel_subprocesses: 128
+aggregations: [criteria_curve, timing]
 
 base_run:
-  mode: criteria
+  mode: criteria_curve
   dataset: dataset2
   repeats: 1
-  n_jobs: 32
+  rounds: 100
+  n_jobs: 1
   iterations: 6
   gibbs_samples: 25
   gibbs_burnin: 12
@@ -22,11 +25,7 @@ base_run:
 sweep:
   seeds:
     start: 0
-    stop: 4
+    stop: 19
     step: 1
   parameters:
     criterion: [random, d_opt, e_opt, social, personalized]
-    rounds:
-      start: 1
-      stop: 100
-      step: 1

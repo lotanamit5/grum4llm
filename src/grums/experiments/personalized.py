@@ -8,6 +8,7 @@ import numpy as np
 
 from grums.core.parameters import GRUMParameters
 from grums.contracts import AgentRecord, AlternativeRecord, RankingObservation
+from grums.experiments.benchmark import ElicitationCurvePoint
 from grums.experiments.metrics import personalized_mean_kendall_tau, raw_mean_kendall_tau
 from grums.experiments.synthetic_data import SyntheticDataset, make_dataset_1, make_dataset_2, make_dataset_consistency
 from grums.inference import MCEMConfig, MCEMInference
@@ -168,6 +169,73 @@ def _single_criteria_personalized_task(
     return personalized_mean_kendall_tau(
         data.params_true, result.final_params, data.agent_features, data.alternative_features
     )
+
+
+def run_personalized_elicitation_curve(
+    dataset: str,
+    n_rounds: int,
+    criterion_name: str,
+    seed: int,
+    mcem_config: MCEMConfig | None = None,
+) -> list[ElicitationCurvePoint]:
+    """Single-seed personalized Kendall curve (paper Fig. 4 style)."""
+
+    config = mcem_config or MCEMConfig(n_iterations=6, n_gibbs_samples=25, n_gibbs_burnin=12)
+    build_dataset = _dataset_builder(dataset)
+    n_pool = max(100, n_rounds + 1)
+    data = build_dataset(n_agents=n_pool, seed=seed)
+    m = data.params_true.n_alternatives
+    kf, lf = data.agent_features.shape[1], data.alternative_features.shape[1]
+
+    alternatives = [AlternativeRecord(alternative_id=j, features=data.alternative_features[j]) for j in range(m)]
+    agents = [AgentRecord(agent_id=f"a{i}", features=data.agent_features[i]) for i in range(data.agent_features.shape[0])]
+    ranking_by_agent = {f"a{i}": data.rankings[i] for i in range(len(data.rankings))}
+    provider = _OracleProvider(ranking_by_agent)
+
+    seed_obs = RankingObservation(agent_id="a0", ranking=data.rankings[0])
+    observed_agents = [agents[0]]
+    candidates = agents[1:]
+
+    criteria = {
+        "random": _RandomCriterion(seed + 1000),
+        "d_opt": DOptimalityCriterion(),
+        "e_opt": EOptimalityCriterion(),
+        "social": SocialChoiceCriterion(n_alternatives=m),
+        "personalized": PersonalizedChoiceCriterion(
+            n_alternatives=m,
+            n_agent_features=kf,
+            n_alternative_features=lf,
+            alternative_features=data.alternative_features,
+            population_agents=data.agent_features,
+        ),
+    }
+
+    criterion = criteria[criterion_name]
+    engine = AdaptiveElicitationEngine(criterion=criterion, mcem_config=config)
+    init = _default_initial_params(m, kf, lf)
+
+    tau_by_n: dict[int, float] = {}
+
+    def _on_after_map(n_obs: int, params: GRUMParameters) -> None:
+        tau_by_n[n_obs] = personalized_mean_kendall_tau(
+            data.params_true, params, data.agent_features, data.alternative_features
+        )
+
+    _ = engine.run(
+        provider=provider,
+        initial_params=init,
+        initial_observations=[seed_obs],
+        observed_agents=observed_agents,
+        candidate_agents=candidates,
+        alternatives=alternatives,
+        n_rounds=n_rounds,
+        on_after_map=_on_after_map,
+    )
+
+    return [
+        ElicitationCurvePoint(n_observations=n, kendall_tau=tau_by_n[n]) for n in sorted(tau_by_n.keys())
+    ]
+
 
 def compare_criteria_personalized_choice(
     dataset: str = "dataset2",

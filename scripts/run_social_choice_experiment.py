@@ -21,7 +21,11 @@ SRC = ROOT / "src"
 if str(SRC) not in sys.path:
     sys.path.insert(0, str(SRC))
 
-from grums.experiments.benchmark import compare_criteria_social_choice, run_asymptotic_social_choice
+from grums.experiments.benchmark import (
+    compare_criteria_social_choice,
+    run_asymptotic_social_choice,
+    run_social_choice_elicitation_curve,
+)
 from grums.inference import MCEMConfig
 import yaml
 
@@ -77,8 +81,8 @@ def _normalize_config(raw: dict[str, Any]) -> dict[str, Any]:
         elif not isinstance(counts, str):
             raise ValueError("agent_counts must be a comma-separated string or list of integers")
 
-    if "mode" in normalized and normalized["mode"] not in {"asymptotic", "criteria", "both"}:
-        raise ValueError("mode must be one of: asymptotic, criteria, both")
+    if "mode" in normalized and normalized["mode"] not in {"asymptotic", "criteria", "both", "criteria_curve"}:
+        raise ValueError("mode must be one of: asymptotic, criteria, both, criteria_curve")
     if "criterion" in normalized and normalized["criterion"] not in {"random", "d_opt", "e_opt", "social", "personalized"}:
         raise ValueError("criterion must be one of: random, d_opt, e_opt, social, personalized")
     if "dataset" in normalized and normalized["dataset"] not in {"dataset1", "dataset2"}:
@@ -140,7 +144,11 @@ def main(argv: list[str] | None = None) -> None:
 
     parser = argparse.ArgumentParser(description="Run synthetic social-choice GRUM experiments.")
     parser.add_argument("--config", type=str, default=pre_args.config, help="Path to YAML run config")
-    parser.add_argument("--mode", choices=["asymptotic", "criteria", "both"], default=defaults["mode"])
+    parser.add_argument(
+        "--mode",
+        choices=["asymptotic", "criteria", "both", "criteria_curve"],
+        default=defaults["mode"],
+    )
     parser.add_argument("--criterion", choices=["random", "d_opt", "e_opt", "social", "personalized"], default=defaults["criterion"])
     parser.add_argument("--dataset", choices=["dataset1", "dataset2"], default=defaults["dataset"])
     parser.add_argument("--agent-counts", default=defaults["agent_counts"])
@@ -278,6 +286,35 @@ def main(argv: list[str] | None = None) -> None:
             ),
         )
 
+    if args.mode == "criteria_curve":
+        payload["criterion"] = args.criterion
+        _log(
+            log_enabled,
+            (
+                "Criteria curve started "
+                f"(dataset={args.dataset}, criterion={args.criterion}, rounds={args.rounds}, "
+                f"seed={args.seed}, iterations={args.iterations})"
+            ),
+        )
+        t0 = perf_counter()
+        curve_points = run_social_choice_elicitation_curve(
+            dataset=args.dataset,
+            n_rounds=args.rounds,
+            criterion_name=args.criterion,
+            seed=args.seed,
+            mcem_config=cfg,
+        )
+        curve_seconds = perf_counter() - t0
+        timing["criteria_seconds"] = curve_seconds
+        payload["criteria_curve"] = [asdict(p) for p in curve_points]
+        _log(
+            log_enabled,
+            (
+                f"Criteria curve finished in {curve_seconds:.2f}s "
+                f"({len(curve_points)} checkpoints)."
+            ),
+        )
+
     total_seconds = perf_counter() - run_start
     timing["total_seconds"] = total_seconds
     payload["timing"] = timing
@@ -298,6 +335,14 @@ def main(argv: list[str] | None = None) -> None:
             (
                 "Runtime estimate hint: criteria runtime scales approximately linearly with "
                 "rounds x repeats x number_of_criteria."
+            ),
+        )
+    if args.mode == "criteria_curve":
+        _log(
+            log_enabled,
+            (
+                "Runtime estimate hint: criteria_curve runs one adaptive chain per invocation; "
+                "runtime scales approximately linearly with rounds (MAP checkpoints)."
             ),
         )
 

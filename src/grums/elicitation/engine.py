@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from collections.abc import Callable
 from dataclasses import dataclass
 
 import numpy as np
@@ -57,6 +58,8 @@ class AdaptiveElicitationEngine:
         candidate_agents: list[AgentRecord],
         alternatives: list[AlternativeRecord],
         n_rounds: int,
+        *,
+        on_after_map: Callable[[int, GRUMParameters], None] | None = None,
     ) -> AdaptiveElicitationResult:
         if len(initial_observations) == 0:
             raise ValueError("initial_observations must not be empty")
@@ -90,6 +93,9 @@ class AdaptiveElicitationEngine:
                 alternative_features=alternative_features,
             )
             params = fit.params
+
+            if on_after_map is not None and observations:
+                on_after_map(len(observations), params)
 
             obs_fisher = observed_fisher_information(
                 params,
@@ -147,6 +153,9 @@ class AdaptiveElicitationEngine:
                 alternative_features=alternative_features,
             )
             params = final_fit.params
+
+            if on_after_map is not None:
+                on_after_map(len(observations), params)
 
         return AdaptiveElicitationResult(
             final_params=params,

@@ -27,6 +27,14 @@ class AsymptoticPoint:
     mean_tau: float
 
 
+@dataclass(frozen=True)
+class ElicitationCurvePoint:
+    """One checkpoint along a single adaptive elicitation trajectory (paper Fig. 3 style)."""
+
+    n_observations: int
+    kendall_tau: float
+
+
 class _OracleProvider(PreferenceProvider):
     def __init__(self, ranking_by_agent_id: dict[str, tuple[int, ...]]) -> None:
         self.ranking_by_agent_id = ranking_by_agent_id
@@ -133,6 +141,69 @@ def _single_criteria_repeat_task(
         n_rounds=n_rounds,
     )
     return social_choice_kendall_tau(data.params_true.delta, result.final_params.delta)
+
+
+def run_social_choice_elicitation_curve(
+    dataset: str,
+    n_rounds: int,
+    criterion_name: str,
+    seed: int,
+    mcem_config: MCEMConfig | None = None,
+) -> list[ElicitationCurvePoint]:
+    """Single-seed adaptive elicitation with Kendall τ after each MAP state (O(n) vs. O(n²) resimulation).
+
+    Observation counts run from 1 (seed only) through 1 + n_rounds after the terminal MAP refit.
+    """
+
+    config = mcem_config or MCEMConfig(n_iterations=6, n_gibbs_samples=25, n_gibbs_burnin=12)
+    build_dataset = _dataset_builder(dataset)
+    data = build_dataset(n_agents=max(n_rounds + 1, 30), seed=seed)
+    m = data.params_true.n_alternatives
+
+    alternatives = [
+        AlternativeRecord(alternative_id=j, features=data.alternative_features[j]) for j in range(m)
+    ]
+    agents = [
+        AgentRecord(agent_id=f"a{i}", features=data.agent_features[i]) for i in range(data.agent_features.shape[0])
+    ]
+    ranking_by_agent = {f"a{i}": data.rankings[i] for i in range(len(data.rankings))}
+    provider = _OracleProvider(ranking_by_agent)
+
+    seed_obs = RankingObservation(agent_id="a0", ranking=data.rankings[0])
+    observed_agents = [agents[0]]
+    candidates = agents[1:]
+
+    criteria = {
+        "random": _RandomCriterion(seed + 1000),
+        "d_opt": DOptimalityCriterion(),
+        "e_opt": EOptimalityCriterion(),
+        "social": SocialChoiceCriterion(n_alternatives=m),
+        "personalized": SocialChoiceCriterion(n_alternatives=m),
+    }
+
+    criterion = criteria[criterion_name]
+    engine = AdaptiveElicitationEngine(criterion=criterion, mcem_config=config)
+
+    tau_by_n: dict[int, float] = {}
+
+    def _on_after_map(n_obs: int, params: GRUMParameters) -> None:
+        tau_by_n[n_obs] = social_choice_kendall_tau(data.params_true.delta, params.delta)
+
+    _ = engine.run(
+        provider=provider,
+        initial_params=_default_initial_params(data),
+        initial_observations=[seed_obs],
+        observed_agents=observed_agents,
+        candidate_agents=candidates,
+        alternatives=alternatives,
+        n_rounds=n_rounds,
+        on_after_map=_on_after_map,
+    )
+
+    return [
+        ElicitationCurvePoint(n_observations=n, kendall_tau=tau_by_n[n])
+        for n in sorted(tau_by_n.keys())
+    ]
 
 
 def run_asymptotic_social_choice(

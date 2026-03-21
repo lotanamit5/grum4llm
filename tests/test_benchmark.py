@@ -1,4 +1,8 @@
-from grums.experiments.benchmark import compare_criteria_social_choice, run_asymptotic_social_choice
+from grums.experiments.benchmark import (
+    compare_criteria_social_choice,
+    run_asymptotic_social_choice,
+    run_social_choice_elicitation_curve,
+)
 from grums.inference import MCEMConfig
 
 
@@ -67,6 +71,19 @@ def test_asymptotic_parallel_matches_serial_for_fixed_seed() -> None:
     )
 
     assert [(p.n_agents, p.mean_tau) for p in serial] == [(p.n_agents, p.mean_tau) for p in parallel]
+
+
+def test_social_choice_elicitation_curve_has_one_checkpoint_per_observation_count() -> None:
+    cfg = MCEMConfig(n_iterations=1, n_gibbs_samples=6, n_gibbs_burnin=3, random_seed=3)
+    curve = run_social_choice_elicitation_curve(
+        "dataset2",
+        n_rounds=2,
+        criterion_name="random",
+        seed=4,
+        mcem_config=cfg,
+    )
+    assert [p.n_observations for p in curve] == [1, 2, 3]
+    assert -1.0 <= curve[-1].kendall_tau <= 1.0
 
 
 def test_criteria_parallel_matches_serial_for_fixed_seed() -> None:
