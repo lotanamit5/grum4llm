@@ -8,6 +8,7 @@ import numpy as np
 
 from grums.core.parameters import GRUMParameters
 from grums.contracts import AgentRecord, AlternativeRecord, RankingObservation
+from grums.providers import OracleRankingProvider
 from grums.experiments.benchmark import ElicitationCurvePoint
 from grums.experiments.metrics import personalized_mean_kendall_tau, raw_mean_kendall_tau
 from grums.experiments.synthetic_data import SyntheticDataset, make_dataset_1, make_dataset_2, make_dataset_consistency
@@ -21,17 +22,6 @@ from grums.elicitation import (
 )
 from concurrent.futures import ProcessPoolExecutor, as_completed
 from typing import Callable
-
-class _OracleProvider:
-    def __init__(self, ranking_by_agent_id: dict[str, tuple[int, ...]]) -> None:
-        self.ranking_by_agent_id = ranking_by_agent_id
-
-    def query_full_ranking(
-        self,
-        agent: AgentRecord,
-        alternatives: list[AlternativeRecord],
-    ) -> RankingObservation:
-        return RankingObservation(agent_id=agent.agent_id, ranking=self.ranking_by_agent_id[agent.agent_id])
 
 class _RandomCriterion:
     def __init__(self, seed: int) -> None:
@@ -135,7 +125,7 @@ def _single_criteria_personalized_task(
     alternatives = [AlternativeRecord(alternative_id=j, features=data.alternative_features[j]) for j in range(m)]
     agents = [AgentRecord(agent_id=f"a{i}", features=data.agent_features[i]) for i in range(data.agent_features.shape[0])]
     ranking_by_agent = {f"a{i}": data.rankings[i] for i in range(len(data.rankings))}
-    provider = _OracleProvider(ranking_by_agent)
+    provider = OracleRankingProvider(ranking_by_agent)
 
     seed_obs = RankingObservation(agent_id="a0", ranking=data.rankings[0])
     observed_agents = [agents[0]]
@@ -190,7 +180,7 @@ def run_personalized_elicitation_curve(
     alternatives = [AlternativeRecord(alternative_id=j, features=data.alternative_features[j]) for j in range(m)]
     agents = [AgentRecord(agent_id=f"a{i}", features=data.agent_features[i]) for i in range(data.agent_features.shape[0])]
     ranking_by_agent = {f"a{i}": data.rankings[i] for i in range(len(data.rankings))}
-    provider = _OracleProvider(ranking_by_agent)
+    provider = OracleRankingProvider(ranking_by_agent)
 
     seed_obs = RankingObservation(agent_id="a0", ranking=data.rankings[0])
     observed_agents = [agents[0]]

@@ -1,5 +1,15 @@
 """Provider adapters for external preference sources.
 
-Adapters can depend on external systems (simulators, APIs, LLM runtimes).
-Core package code must remain independent of provider implementations.
+Core elicitation code must depend only on ``PreferenceProvider`` (see ``grums.contracts``).
+Implementations here are source-agnostic at the type level: observations carry no simulator/LLM label.
 """
+
+from grums.providers.factory import build_preference_provider
+from grums.providers.llm_stub import StubLLMPreferenceProvider
+from grums.providers.oracle import OracleRankingProvider
+
+__all__ = [
+    "OracleRankingProvider",
+    "StubLLMPreferenceProvider",
+    "build_preference_provider",
+]

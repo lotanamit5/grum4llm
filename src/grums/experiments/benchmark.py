@@ -8,7 +8,7 @@ from typing import Callable
 
 import numpy as np
 
-from grums.contracts import AgentRecord, AlternativeRecord, PreferenceProvider, RankingObservation
+from grums.contracts import AgentRecord, AlternativeRecord, RankingObservation
 from grums.core.parameters import GRUMParameters
 from grums.elicitation import (
     AdaptiveElicitationEngine,
@@ -19,6 +19,7 @@ from grums.elicitation import (
 from grums.experiments.metrics import social_choice_kendall_tau
 from grums.experiments.synthetic_data import SyntheticDataset, make_dataset_1, make_dataset_2
 from grums.inference import MCEMConfig, MCEMInference
+from grums.providers import OracleRankingProvider
 
 
 @dataclass(frozen=True)
@@ -33,19 +34,6 @@ class ElicitationCurvePoint:
 
     n_observations: int
     kendall_tau: float
-
-
-class _OracleProvider(PreferenceProvider):
-    def __init__(self, ranking_by_agent_id: dict[str, tuple[int, ...]]) -> None:
-        self.ranking_by_agent_id = ranking_by_agent_id
-
-    def query_full_ranking(
-        self,
-        agent: AgentRecord,
-        alternatives: list[AlternativeRecord],
-    ) -> RankingObservation:
-        _ = alternatives
-        return RankingObservation(agent_id=agent.agent_id, ranking=self.ranking_by_agent_id[agent.agent_id])
 
 
 class _RandomCriterion:
@@ -115,7 +103,7 @@ def _single_criteria_repeat_task(
         for i in range(data.agent_features.shape[0])
     ]
     ranking_by_agent = {f"a{i}": data.rankings[i] for i in range(len(data.rankings))}
-    provider = _OracleProvider(ranking_by_agent)
+    provider = OracleRankingProvider(ranking_by_agent)
 
     seed_obs = RankingObservation(agent_id="a0", ranking=data.rankings[0])
     observed_agents = [agents[0]]
@@ -167,7 +155,7 @@ def run_social_choice_elicitation_curve(
         AgentRecord(agent_id=f"a{i}", features=data.agent_features[i]) for i in range(data.agent_features.shape[0])
     ]
     ranking_by_agent = {f"a{i}": data.rankings[i] for i in range(len(data.rankings))}
-    provider = _OracleProvider(ranking_by_agent)
+    provider = OracleRankingProvider(ranking_by_agent)
 
     seed_obs = RankingObservation(agent_id="a0", ranking=data.rankings[0])
     observed_agents = [agents[0]]
@@ -305,7 +293,7 @@ def compare_criteria_social_choice(
                 for i in range(data.agent_features.shape[0])
             ]
             ranking_by_agent = {f"a{i}": data.rankings[i] for i in range(len(data.rankings))}
-            provider = _OracleProvider(ranking_by_agent)
+            provider = OracleRankingProvider(ranking_by_agent)
 
             seed_obs = RankingObservation(agent_id="a0", ranking=data.rankings[0])
             observed_agents = [agents[0]]

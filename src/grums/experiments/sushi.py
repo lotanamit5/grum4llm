@@ -19,17 +19,8 @@ from grums.elicitation import (
     PersonalizedChoiceCriterion,
 )
 from grums.experiments.metrics import social_choice_suboptimality, personalized_mean_kendall_tau
+from grums.providers import OracleRankingProvider
 
-class _OracleProvider:
-    def __init__(self, ranking_by_agent_id: dict[str, tuple[int, ...]]) -> None:
-        self.ranking_by_agent_id = ranking_by_agent_id
-
-    def query_full_ranking(
-        self,
-        agent: AgentRecord,
-        alternatives: list[AlternativeRecord],
-    ) -> RankingObservation:
-        return RankingObservation(agent_id=agent.agent_id, ranking=self.ranking_by_agent_id[agent.agent_id])
 
 class _RandomCriterion:
     def __init__(self, seed: int) -> None:
@@ -97,7 +88,7 @@ def _single_criteria_sushi_task(
     agents = [AgentRecord(agent_id=f"a_{i}", features=feat) for i, feat in enumerate(selected_features)]
     ranking_by_agent = {a.agent_id: r for a, r in zip(agents, selected_rankings)}
     
-    provider = _OracleProvider(ranking_by_agent)
+    provider = OracleRankingProvider(ranking_by_agent)
     seed_obs = RankingObservation(agent_id=agents[0].agent_id, ranking=selected_rankings[0])
     
     criteria = {
