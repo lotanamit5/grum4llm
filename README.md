@@ -33,20 +33,18 @@ Run a social-choice synthetic experiment end-to-end:
 	--output-json results_social_choice.json
 ```
 
-Run using a YAML config (recommended for reproducibility/auditing):
+Paper-style reproduction uses orchestration configs under `configs/repro/` and SLURM drivers under `scripts/slurm_figure*.sh`; see [docs/repro_figure_scripts.md](docs/repro_figure_scripts.md).
+
+Quick smoke (no YAML file):
 
 ```bash
-/home/lotanamit/miniconda3/envs/env/bin/python scripts/run_social_choice_experiment.py \
-	--config configs/light/social_choice_light.yml
-```
-
-CLI arguments override values from the config file, for example:
-
-```bash
-/home/lotanamit/miniconda3/envs/env/bin/python scripts/run_social_choice_experiment.py \
-	--config configs/light/social_choice_light.yml \
-	--rounds 10 \
-	--n-jobs 16
+python scripts/run_social_choice_experiment.py \
+	--mode asymptotic \
+	--agent-counts 5,10 \
+	--repeats 1 \
+	--iterations 0 \
+	--no-progress \
+	--output-json results/smoke_social.json
 ```
 
 Notes:

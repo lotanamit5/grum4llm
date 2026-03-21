@@ -4,8 +4,8 @@
 #SBATCH --output=logs/slurm/fig6_%j.out
 #SBATCH --error=logs/slurm/fig6_%j.err
 #SBATCH --time=8:00:00
-#SBATCH --mem=64G
-#SBATCH --cpus-per-task=32
+#SBATCH --mem=256G
+#SBATCH --cpus-per-task=128
 
 set -e
 set -o pipefail

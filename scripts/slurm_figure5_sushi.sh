@@ -1,10 +1,12 @@
 #!/usr/bin/env bash
+# Fig. 5: Sushi (not YAML-orchestrated). Each criterion run uses --n-jobs parallel repeats
+# inside one Python process; keep --cpus-per-task >= --n-jobs in the loop below.
 #SBATCH --job-name=grums-fig5-sushi
 #SBATCH --output=logs/slurm/fig5_sushi_%j.out
 #SBATCH --error=logs/slurm/fig5_sushi_%j.err
-#SBATCH --time=4:00:00
-#SBATCH --mem=8G
-#SBATCH --cpus-per-task=4
+#SBATCH --time=12:00:00
+#SBATCH --mem=64G
+#SBATCH --cpus-per-task=16
 
 set -e
 set -o pipefail
@@ -12,6 +14,10 @@ set -o pipefail
 # ── resolve repo root ─────────────────────────────────────────────────────────
 REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 cd "$REPO_ROOT"
+
+export OMP_NUM_THREADS=1
+export OPENBLAS_NUM_THREADS=1
+export MKL_NUM_THREADS=1
 
 # ── activate conda environment ────────────────────────────────────────────────
 # shellcheck disable=SC1091
@@ -30,7 +36,7 @@ for criterion in "${CRITERIA[@]}"; do
         --metric     social \
         --repeats    20 \
         --rounds     100 \
-        --n-jobs     4 \
+        --n-jobs     16 \
         --output-json "results/repro/sushi/sushi_${criterion}.json"
 done
 

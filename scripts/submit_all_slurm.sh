@@ -22,6 +22,9 @@ log() { echo "[$(date '+%Y-%m-%d %H:%M:%S')] $*"; }
 
 log "Submitting GRUMs figure jobs to SLURM..."
 
+JOB2=$(sbatch --parsable scripts/slurm_figure2.sh)
+log "Figure 2 submitted: job $JOB2"
+
 JOB3=$(sbatch --parsable scripts/slurm_figure3.sh)
 log "Figure 3 submitted: job $JOB3"
 
@@ -37,4 +40,5 @@ log "Figure 6 submitted: job $JOB6"
 log ""
 log "All jobs submitted. Monitor with:"
 log "  squeue -u \$USER"
+log "  tail -f logs/slurm/fig2_${JOB2}.out"
 log "  tail -f logs/slurm/fig3_${JOB3}.out"

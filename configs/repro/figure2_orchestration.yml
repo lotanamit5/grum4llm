@@ -1,8 +1,8 @@
 run_prefix: fig2-repro
 output_root: results/repro
 worker_script: scripts/run_social_choice_experiment.py
-max_parallel_subprocesses: 32
-aggregations: [asymptotic, criteria, timing]
+max_parallel_subprocesses: 128
+aggregations: [asymptotic, timing]
 
 base_run:
   mode: asymptotic
