@@ -11,8 +11,7 @@ set -e
 set -o pipefail
 
 # ── resolve repo root ─────────────────────────────────────────────────────────
-REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
-cd "$REPO_ROOT"
+cd "$SLURM_SUBMIT_DIR"
 
 export OMP_NUM_THREADS=1
 export OPENBLAS_NUM_THREADS=1
@@ -22,8 +21,6 @@ export MKL_NUM_THREADS=1
 # shellcheck disable=SC1091
 source "$(conda info --base)/etc/profile.d/conda.sh"
 conda activate env
-
-mkdir -p logs/slurm
 
 echo "[$(date '+%Y-%m-%d %H:%M:%S')] Starting Figure 6..."
 python scripts/run_experiment_orchestration.py \

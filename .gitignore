@@ -5,6 +5,7 @@ data/
 results/
 
 # SLURM output files
+logs/
 out/
 err/
 
