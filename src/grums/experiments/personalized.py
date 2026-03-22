@@ -15,6 +15,7 @@ from grums.experiments.synthetic_data import SyntheticDataset, make_dataset_1, m
 from grums.inference import MCEMConfig, MCEMInference
 from grums.elicitation import (
     AdaptiveElicitationEngine,
+    RandomCriterion,
     DOptimalityCriterion,
     EOptimalityCriterion,
     SocialChoiceCriterion,
@@ -22,14 +23,6 @@ from grums.elicitation import (
 )
 from concurrent.futures import ProcessPoolExecutor, as_completed
 from typing import Callable
-
-class _RandomCriterion:
-    def __init__(self, seed: int) -> None:
-        self.rng = np.random.default_rng(seed)
-
-    def score(self, prior_plus_candidate_info: np.ndarray, theta_vector: np.ndarray) -> float:
-        return float(self.rng.random())
-
 
 
 @dataclass(frozen=True)
@@ -132,7 +125,7 @@ def _single_criteria_personalized_task(
     candidates = agents[1:]
 
     criteria = {
-        "random": _RandomCriterion(seed + 1000 + repeat_index),
+        "random": RandomCriterion(seed + 1000 + repeat_index),
         "d_opt": DOptimalityCriterion(),
         "e_opt": EOptimalityCriterion(),
         "social": SocialChoiceCriterion(n_alternatives=m),
@@ -187,7 +180,7 @@ def run_personalized_elicitation_curve(
     candidates = agents[1:]
 
     criteria = {
-        "random": _RandomCriterion(seed + 1000),
+        "random": RandomCriterion(seed + 1000),
         "d_opt": DOptimalityCriterion(),
         "e_opt": EOptimalityCriterion(),
         "social": SocialChoiceCriterion(n_alternatives=m),

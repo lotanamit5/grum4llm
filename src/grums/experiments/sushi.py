@@ -13,6 +13,7 @@ from grums.datasets.sushi import load_sushi, SushiDataset
 from grums.inference import MCEMConfig, MCEMInference
 from grums.elicitation import (
     AdaptiveElicitationEngine,
+    RandomCriterion,
     DOptimalityCriterion,
     EOptimalityCriterion,
     SocialChoiceCriterion,
@@ -21,13 +22,6 @@ from grums.elicitation import (
 from grums.experiments.metrics import social_choice_suboptimality, personalized_mean_kendall_tau
 from grums.providers import OracleRankingProvider
 
-
-class _RandomCriterion:
-    def __init__(self, seed: int) -> None:
-        self.rng = np.random.default_rng(seed)
-
-    def score(self, prior_plus_candidate_info: np.ndarray, theta_vector: np.ndarray) -> float:
-        return float(self.rng.random())
 
 # Global cache for the ground-truth fit so processes don't redundantly re-fit 1000 agents
 _SUSHI_FIT_CACHE = None
@@ -92,7 +86,7 @@ def _single_criteria_sushi_task(
     seed_obs = RankingObservation(agent_id=agents[0].agent_id, ranking=selected_rankings[0])
     
     criteria = {
-        "random": _RandomCriterion(seed + 1000 + repeat_index),
+        "random": RandomCriterion(seed + 1000 + repeat_index),
         "d_opt": DOptimalityCriterion(),
         "e_opt": EOptimalityCriterion(),
         "social": SocialChoiceCriterion(n_alternatives=m),

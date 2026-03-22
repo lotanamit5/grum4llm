@@ -12,12 +12,18 @@ from grums.contracts import AgentRecord, AlternativeRecord, RankingObservation
 from grums.core.parameters import GRUMParameters
 from grums.elicitation import (
     AdaptiveElicitationEngine,
+    RandomCriterion,
     DOptimalityCriterion,
     EOptimalityCriterion,
     SocialChoiceCriterion,
 )
 from grums.experiments.metrics import social_choice_kendall_tau
-from grums.experiments.synthetic_data import SyntheticDataset, make_dataset_1, make_dataset_2
+from grums.experiments.synthetic_data import (
+    SyntheticDataset, 
+    make_dataset_1,
+    make_dataset_2,
+    make_dataset_consistency
+)
 from grums.inference import MCEMConfig, MCEMInference
 from grums.providers import OracleRankingProvider
 
@@ -36,16 +42,6 @@ class ElicitationCurvePoint:
     kendall_tau: float
 
 
-class _RandomCriterion:
-    def __init__(self, seed: int) -> None:
-        self.rng = np.random.default_rng(seed)
-
-    def score(self, prior_plus_candidate_info: np.ndarray, theta_vector: np.ndarray) -> float:
-        _ = prior_plus_candidate_info
-        _ = theta_vector
-        return float(self.rng.random())
-
-
 def _default_initial_params(dataset: SyntheticDataset) -> GRUMParameters:
     k = dataset.agent_features.shape[1]
     l = dataset.alternative_features.shape[1]
@@ -54,6 +50,8 @@ def _default_initial_params(dataset: SyntheticDataset) -> GRUMParameters:
 
 
 def _dataset_builder(dataset: str):
+    if dataset == "dataset0":
+        return make_dataset_consistency
     if dataset == "dataset1":
         return make_dataset_1
     if dataset == "dataset2":
@@ -110,7 +108,7 @@ def _single_criteria_repeat_task(
     candidates = agents[1:]
 
     criteria = {
-        "random": _RandomCriterion(seed + 1000 + repeat_index),
+        "random": RandomCriterion(seed + 1000 + repeat_index),
         "d_opt": DOptimalityCriterion(),
         "e_opt": EOptimalityCriterion(),
         "social": SocialChoiceCriterion(n_alternatives=m),
@@ -162,7 +160,7 @@ def run_social_choice_elicitation_curve(
     candidates = agents[1:]
 
     criteria = {
-        "random": _RandomCriterion(seed + 1000),
+        "random": RandomCriterion(seed + 1000),
         "d_opt": DOptimalityCriterion(),
         "e_opt": EOptimalityCriterion(),
         "social": SocialChoiceCriterion(n_alternatives=m),
@@ -300,7 +298,7 @@ def compare_criteria_social_choice(
             candidates = agents[1:]
 
             criteria = {
-                "random": _RandomCriterion(seed + 1000 + r),
+                "random": RandomCriterion(seed + 1000 + r),
                 "d_opt": DOptimalityCriterion(),
                 "e_opt": EOptimalityCriterion(),
                 "social": SocialChoiceCriterion(n_alternatives=m),

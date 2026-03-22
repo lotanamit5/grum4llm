@@ -1,6 +1,7 @@
 """Bayesian experimental-design criteria for elicitation."""
 
 from grums.elicitation.criteria import (
+    RandomCriterion,
     DOptimalityCriterion,
     EOptimalityCriterion,
     PersonalizedChoiceCriterion,

@@ -15,6 +15,14 @@ class DesignCriterion(Protocol):
     def score(self, prior_plus_candidate_info: FloatArray, theta_vector: FloatArray) -> float:
         """Return scalar score where larger values are better."""
 
+class RandomCriterion:
+    def __init__(self, seed: int) -> None:
+        self.rng = np.random.default_rng(seed)
+
+    def score(self, prior_plus_candidate_info: np.ndarray, theta_vector: np.ndarray) -> float:
+        _ = prior_plus_candidate_info
+        _ = theta_vector
+        return float(self.rng.random())
 
 @dataclass(frozen=True)
 class DOptimalityCriterion:
