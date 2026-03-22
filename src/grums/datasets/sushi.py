@@ -65,12 +65,17 @@ def load_sushi(data_dir: str | Path = ".data") -> SushiDataset:
     # Parse alternatives (idata)
     # columns: [item_id, name, style, major_group, minor_group, oiliness, eating_freq, price, sell_freq]
     # We drop the item_id (col 0) and name (col 1)
-    alt_rows = []
+    alt_rows = {}
+    top_10_names = ["ebi", "anago", "maguro", "ika", "uni", "ikura", "tamago", "toro", "tekka_maki", "kappa_maki"]
     for line in idata_text.strip().splitlines():
         parts = line.strip().split("\t")
         if len(parts) >= 9:
+            id, name = parts[0], parts[1]
+            if name not in top_10_names:
+                continue  # Skip alternatives not in the top 10 ranked by agents
             row = [float(x) for x in parts[2:]]  # Drop col 0 (id) and col 1 (name)
-            alt_rows.append(row)
+            alt_rows[name] = row
+    alt_rows = [alt_rows[name] for name in top_10_names]
     alternative_features = np.array(alt_rows, dtype=float)
 
     # Parse rankings (sushi3a.5000.10.order)
