@@ -15,7 +15,7 @@ from grums.experiments.orchestrator import (
     run_aggregations_for_run_folder,
     run_orchestration,
 )
-from grums.experiments.personalized import PersonalizedPoint, run_personalized_asymptotic
+from grums.experiments.personalized import run_personalized_asymptotic
 from grums.experiments.synthetic_data import (
     SyntheticDataset,
     SyntheticDatasetConfig,
@@ -33,7 +33,6 @@ __all__ = [
     "moving_average",
     "run_asymptotic_social_choice",
     "compare_criteria_social_choice",
-    "PersonalizedPoint",
     "run_personalized_asymptotic",
     "load_orchestration_config",
     "run_orchestration",

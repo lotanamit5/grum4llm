@@ -120,7 +120,7 @@ def main(argv: list[str] | None = None) -> None:
 
     timing = {}
 
-    _log(log_enabled, f"Criteria phase started (criterion={args.criterion}, metric={args.metric}, rounds={args.rounds}, repeats={args.repeats})")
+    _log(log_enabled, f"Criteria phase started (criterion={args.criterion}, rounds={args.rounds}, repeats={args.repeats})")
     t0 = perf_counter()
 
     pbar_total = args.repeats
