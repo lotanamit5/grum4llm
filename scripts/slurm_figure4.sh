@@ -4,9 +4,7 @@
 #SBATCH --job-name=grums-fig4
 #SBATCH --output=logs/slurm/fig4_%j.out
 #SBATCH --error=logs/slurm/fig4_%j.err
-#SBATCH --time=8:00:00
-#SBATCH --mem=256G
-#SBATCH --cpus-per-task=128
+#SBATCH --cpus-per-task=64
 
 set -e
 set -o pipefail
@@ -19,7 +17,6 @@ export OPENBLAS_NUM_THREADS=1
 export MKL_NUM_THREADS=1
 
 # ── activate conda environment ────────────────────────────────────────────────
-# shellcheck disable=SC1091
 source "$(conda info --base)/etc/profile.d/conda.sh"
 conda activate env
 
