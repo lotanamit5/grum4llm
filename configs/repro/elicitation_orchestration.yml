@@ -1,0 +1,27 @@
+run_prefix: "elicitation_repro"
+output_root: "results/repro"
+worker_script: "scripts/fit_grum.py"
+mode: "slurm"
+slurm:
+  account: "bml"
+  partition: "bml"
+  measure_runtime: true
+
+base_run:
+  steps: 90
+  checkpoints: 1
+  mcem:
+    n_iterations: 8
+    n_gibbs_samples: 30
+    n_gibbs_burnin: 15
+
+sweep:
+  seeds:
+    start: 0
+    end: 29
+    step: 1
+  parameters:
+    dataset: ["ds1", "ds2", "sushi"]
+    criterion: ["social", "personalized", "random", "d_opt", "e_opt"]
+
+aggregations: ["criteria_curve", "timing"]

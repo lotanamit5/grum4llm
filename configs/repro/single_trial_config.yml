@@ -1,9 +1,0 @@
-dataset: "ds1"
-criterion: "social"
-steps: 75
-checkpoints: 1
-seed: 42
-mcem:
-  n_iterations: 8
-  n_gibbs_samples: 30
-  n_gibbs_burnin: 15

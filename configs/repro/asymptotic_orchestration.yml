@@ -1,0 +1,27 @@
+run_prefix: "asymptotic_repro"
+output_root: "results/repro"
+worker_script: "scripts/fit_grum.py"
+mode: "slurm"
+slurm:
+  account: "bml"
+  partition: "bml"
+  measure_runtime: true
+
+base_run:
+  steps: 500
+  checkpoints: 50
+  mcem:
+    n_iterations: 8
+    n_gibbs_samples: 30
+    n_gibbs_burnin: 15
+
+sweep:
+  seeds:
+    start: 0
+    end: 9
+    step: 1
+  parameters:
+    dataset: ["ds0"]
+    criterion: ["social", "personalized"]
+
+aggregations: ["criteria_curve", "timing"]
