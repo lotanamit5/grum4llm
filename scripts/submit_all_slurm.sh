@@ -27,8 +27,8 @@ log "Figure 3 submitted: job $JOB3"
 JOB4=$(sbatch --parsable scripts/slurm_figure4.sh)
 log "Figure 4 submitted: job $JOB4"
 
-JOB5=$(sbatch --parsable scripts/slurm_figure5_sushi.sh)
-log "Figure 5 (Sushi) submitted: job $JOB5"
+JOB5=$(sbatch --parsable scripts/slurm_figure5.sh)
+log "Figure 5 submitted: job $JOB5"
 
 JOB6=$(sbatch --parsable scripts/slurm_figure6.sh)
 log "Figure 6 submitted: job $JOB6"
