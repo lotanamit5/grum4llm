@@ -1,13 +1,13 @@
-run_prefix: "colors_st_pca"
-output_root: "experiments/out"
+run_prefix: "colors_qwen_pca"
+output_root: "results/llm"
 worker_script: "scripts/run_color_experiment.py"
 aggregations: ["criteria_curve"]
 max_parallel_subprocesses: 4
 
 base_run:
-  dataset_path: "data/color_dataset_st_pca.json"
+  dataset_path: "data/color_dataset_qwen_pca.json"
   model_name: "Qwen/Qwen2.5-0.5B"
-  embedding_method: "sentence_transformer_pca"
+  embedding_method: "hidden_state_pca"
 
 sweep:
   seeds:
