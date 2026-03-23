@@ -62,15 +62,15 @@ def _parse_seed_values(seed_cfg: Any) -> list[int]:
         out = [int(v.strip()) for v in seed_cfg.split(",") if v.strip()]
     elif isinstance(seed_cfg, dict):
         start = int(seed_cfg.get("start", 0))
-        stop = int(seed_cfg.get("stop", 0))
+        stop = int(seed_cfg.get("stop", seed_cfg.get("end", 0)))
         step = int(seed_cfg.get("step", 1))
         if step <= 0:
             raise ValueError("sweep.seeds.step must be positive")
         if stop < start:
-            raise ValueError("sweep.seeds.stop must be >= start")
+            raise ValueError("sweep.seeds.stop/end must be >= start")
         out = list(range(start, stop + 1, step))
     else:
-        raise ValueError("sweep.seeds must be list, csv string, or mapping with start/stop/step")
+        raise ValueError("sweep.seeds must be list, csv string, or mapping with start/stop/step/end")
 
     if not out:
         raise ValueError("sweep.seeds must contain at least one value")
@@ -84,12 +84,12 @@ def _parse_sweep_values(raw: Any, key_path: str) -> list[Any]:
         values = [v.strip() for v in raw.split(",") if v.strip()]
     elif isinstance(raw, dict):
         start = int(raw.get("start", 0))
-        stop = int(raw.get("stop", 0))
+        stop = int(raw.get("stop", raw.get("end", 0)))
         step = int(raw.get("step", 1))
         if step <= 0:
             raise ValueError(f"{key_path}.step must be positive")
         if stop < start:
-            raise ValueError(f"{key_path}.stop must be >= start")
+            raise ValueError(f"{key_path}.stop/end must be >= start")
         values = list(range(start, stop + 1, step))
     else:
         values = [raw]
@@ -162,6 +162,9 @@ def load_orchestration_config(config_path: Path) -> dict[str, Any]:
         raise ValueError("max_parallel_subprocesses must be positive")
 
     worker_script = str(raw.get("worker_script", "scripts/run_social_choice_experiment.py"))
+    
+    mode = raw.get("mode", "local")
+    slurm = raw.get("slurm", {})
 
     return {
         "run_prefix": str(raw["run_prefix"]),
@@ -172,6 +175,8 @@ def load_orchestration_config(config_path: Path) -> dict[str, Any]:
         "sweep_parameters": sweep_parameters,
         "max_parallel_subprocesses": max_parallel,
         "aggregations": aggregations,
+        "mode": mode,
+        "slurm": slurm,
     }
 
 
@@ -548,8 +553,43 @@ def run_orchestration(
         "sweep_parameters": loaded["sweep_parameters"],
         "subruns": [],
     }
+    
+    mode = loaded.get("mode", "local")
 
     results: list[SubrunResult] = []
+    
+    if mode == "slurm":
+        import random
+        slurm_config = loaded.get("slurm", {})
+        account = slurm_config.get("account", "bml")
+        partition = slurm_config.get("partition", "bml")
+        nodes_cfg = slurm_config.get("nodes", [])
+        if isinstance(nodes_cfg, str):
+            nodes = [nodes_cfg]
+        else:
+            nodes = list(nodes_cfg)
+        
+        sh_path = run_dir / "slurm_runner.sh"
+        lines = ["#!/usr/bin/env bash", ""]
+        
+        for spec in specs:
+            node = random.choice(nodes) if nodes else ""
+            node_arg = f"-w {node} " if node else ""
+            cmd = f"sbatch -A {account} -p {partition} {node_arg}{worker_script} --config {spec.config_path}"
+            lines.append(cmd)
+            
+        sh_path.write_text("\n".join(lines) + "\n", encoding="utf-8")
+        sh_path.chmod(0o755)
+        
+        print(f"Executing slurm runner script at {sh_path}")
+        subprocess.run(["bash", str(sh_path)], cwd=workspace_root)
+        
+        metadata["finished_at_utc"] = _utc_now_iso()
+        metadata["status"] = "slurm_array_generated"
+        (run_dir / "metadata.json").write_text(json.dumps(metadata, indent=2) + "\n", encoding="utf-8")
+        return run_dir
+        
+    # Standard local threaded execution
     pbar = None
     if show_progress and _tqdm is not None:
         pbar = _tqdm(total=len(specs), desc="Subruns", unit="run")
