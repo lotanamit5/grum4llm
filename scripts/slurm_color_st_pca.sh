@@ -2,10 +2,9 @@
 #SBATCH --job-name=grums-color-st-pca
 #SBATCH --output=logs/slurm/color_st_pca_%j.out
 #SBATCH --error=logs/slurm/color_st_pca_%j.err
-#SBATCH --time=4:00:00
 #SBATCH --mem=64G
 #SBATCH --cpus-per-task=16
-#SBATCH --gpus=1
+#SBATCH --gres=gpu:16
 
 set -e
 set -o pipefail
@@ -24,6 +23,6 @@ echo "[$(date '+%Y-%m-%d %H:%M:%S')] Phase 1: Generating SentenceTransformers PC
 python scripts/generate_color_dataset.py --config configs/color_sweep_st.yml
 
 echo "[$(date '+%Y-%m-%d %H:%M:%S')] Phase 2: Running orchestrator active learning sweeps (ST PCA)..."
-python scripts/run_experiment_orchestration.py configs/color_sweep_st.yml
+python scripts/run_experiment_orchestration.py --config configs/color_sweep_st.yml
 
 echo "[$(date '+%Y-%m-%d %H:%M:%S')] ST PCA color ranking experiment complete."
