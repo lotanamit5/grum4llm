@@ -19,7 +19,7 @@ from grums.elicitation import (
     SocialChoiceCriterion,
     PersonalizedChoiceCriterion,
 )
-from grums.experiments.metrics import social_choice_suboptimality, personalized_mean_kendall_tau
+from grums.experiments.metrics import social_choice_kendall_tau, personalized_mean_kendall_tau, raw_mean_kendall_tau
 from grums.providers import OracleRankingProvider
 
 
@@ -34,8 +34,11 @@ def _get_sushi_ground_truth(dataset_path: str, mcem_config: MCEMConfig, seed: in
     dataset = load_sushi(dataset_path)
     
     # 1000 agents for ground truth
-    train_agents = dataset.agent_features[:1000]
-    train_rankings = dataset.rankings[:1000]
+    rng = np.random.default_rng(seed)
+    idx = rng.choice(len(dataset.agent_features), size=1000, replace=False)
+    
+    train_agents = dataset.agent_features[idx]
+    train_rankings = [dataset.rankings[i] for i in idx]
     alternatives = dataset.alternative_features
     
     from grums.core.parameters import GRUMParameters
@@ -51,7 +54,7 @@ def _get_sushi_ground_truth(dataset_path: str, mcem_config: MCEMConfig, seed: in
         agent_features=train_agents,
         alternative_features=alternatives,
     )
-    _SUSHI_FIT_CACHE = (dataset, fit.params)
+    _SUSHI_FIT_CACHE = (dataset, fit.params, set(idx))
     return _SUSHI_FIT_CACHE
 
 def _single_criteria_sushi_task(
@@ -62,15 +65,17 @@ def _single_criteria_sushi_task(
     metric: str,
     seed: int,
     config: MCEMConfig,
-) -> float:
-    dataset, true_params = _get_sushi_ground_truth(dataset_path, config, seed)
+) -> dict[str, float]:
+    dataset, true_params, train_idx = _get_sushi_ground_truth(dataset_path, config, seed)
     m = dataset.n_alternatives
     
     alternatives = [AlternativeRecord(alternative_id=j, features=dataset.alternative_features[j]) for j in range(m)]
     
-    # Test agents logic: use a specific pool from the remaining 4000.
-    test_agent_features = dataset.agent_features[1000:]
-    test_rankings = dataset.rankings[1000:]
+    all_indices = np.arange(len(dataset.agent_features))
+    test_indices = np.array([i for i in all_indices if i not in train_idx])
+    
+    test_agent_features = dataset.agent_features[test_indices]
+    test_rankings = [dataset.rankings[i] for i in test_indices]
     
     # For Figure 5, just pick 100 random agents per repeat from the 4000 test set
     rng = np.random.default_rng(seed + repeat_index)
@@ -118,10 +123,10 @@ def _single_criteria_sushi_task(
         n_rounds=n_rounds,
     )
     
-    if metric == "social":
-        return social_choice_suboptimality(true_params, result.final_params, selected_features, dataset.alternative_features)
-    else:
-        return personalized_mean_kendall_tau(true_params, result.final_params, selected_features, dataset.alternative_features)
+    soc_tau = social_choice_kendall_tau(true_params.delta, result.final_params.delta)
+    mean_person = personalized_mean_kendall_tau(true_params, result.final_params, selected_features, dataset.alternative_features)
+    raw_person = raw_mean_kendall_tau(result.final_params, selected_features, dataset.alternative_features, selected_rankings)
+    return {"social": soc_tau, "mean_person": mean_person, "raw_person": raw_person}
 
 def compare_criteria_sushi_choice(
     dataset_path: str = ".data",
@@ -133,9 +138,9 @@ def compare_criteria_sushi_choice(
     mcem_config: MCEMConfig | None = None,
     n_jobs: int = 1,
     progress_update: Callable[[int], None] | None = None,
-) -> float:
+) -> dict[str, float]:
     config = mcem_config or MCEMConfig(n_iterations=6, n_gibbs_samples=25, n_gibbs_burnin=12)
-    out: list[float] = []
+    out: list[dict[str, float]] = []
     
     if n_jobs == 1:
         for r in range(repeats):
@@ -152,4 +157,8 @@ def compare_criteria_sushi_choice(
                 out.append(fut.result())
                 if progress_update: progress_update(1)
                 
-    return float(np.mean(out))
+    return {
+        "social": float(np.mean([x["social"] for x in out])),
+        "mean_person": float(np.mean([x["mean_person"] for x in out])),
+        "raw_person": float(np.mean([x["raw_person"] for x in out])),
+    }

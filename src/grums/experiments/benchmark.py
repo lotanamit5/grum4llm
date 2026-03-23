@@ -17,7 +17,7 @@ from grums.elicitation import (
     EOptimalityCriterion,
     SocialChoiceCriterion,
 )
-from grums.experiments.metrics import social_choice_kendall_tau
+from grums.experiments.metrics import social_choice_kendall_tau, personalized_mean_kendall_tau, raw_mean_kendall_tau
 from grums.experiments.synthetic_data import (
     SyntheticDataset, 
     make_dataset_1,
@@ -31,7 +31,9 @@ from grums.providers import OracleRankingProvider
 @dataclass(frozen=True)
 class AsymptoticPoint:
     n_agents: int
-    mean_tau: float
+    social_tau: float
+    mean_person_tau: float
+    raw_person_tau: float
 
 
 @dataclass(frozen=True)
@@ -39,7 +41,9 @@ class ElicitationCurvePoint:
     """One checkpoint along a single adaptive elicitation trajectory (paper Fig. 3 style)."""
 
     n_observations: int
-    kendall_tau: float
+    social_tau: float
+    mean_person_tau: float
+    raw_person_tau: float
 
 
 def _default_initial_params(dataset: SyntheticDataset) -> GRUMParameters:
@@ -66,7 +70,7 @@ def _single_asymptotic_task(
     max_agents: int,
     seed: int,
     config: MCEMConfig,
-) -> tuple[int, float]:
+) -> tuple[int, float, float, float]:
     build_dataset = _dataset_builder(dataset)
     data = build_dataset(n_agents=max_agents, seed=seed + repeat_index)
     init = _default_initial_params(data)
@@ -78,7 +82,9 @@ def _single_asymptotic_task(
         alternative_features=data.alternative_features,
     )
     tau = social_choice_kendall_tau(data.params_true.delta, fit.params.delta)
-    return n, tau
+    mean_person_tau = personalized_mean_kendall_tau(data.params_true, fit.params, data.agent_features, data.alternative_features)
+    raw_person_tau = raw_mean_kendall_tau(fit.params, data.agent_features, data.alternative_features, list(data.rankings))
+    return n, tau, mean_person_tau, raw_person_tau
 
 
 def _single_criteria_repeat_task(
@@ -126,7 +132,10 @@ def _single_criteria_repeat_task(
         alternatives=alternatives,
         n_rounds=n_rounds,
     )
-    return social_choice_kendall_tau(data.params_true.delta, result.final_params.delta)
+    soc_tau = social_choice_kendall_tau(data.params_true.delta, result.final_params.delta)
+    mean_tau = personalized_mean_kendall_tau(data.params_true, result.final_params, data.agent_features, data.alternative_features)
+    raw_tau = raw_mean_kendall_tau(result.final_params, data.agent_features, data.alternative_features, list(data.rankings))
+    return soc_tau, mean_tau, raw_tau
 
 
 def run_social_choice_elicitation_curve(
@@ -170,10 +179,13 @@ def run_social_choice_elicitation_curve(
     criterion = criteria[criterion_name]
     engine = AdaptiveElicitationEngine(criterion=criterion, mcem_config=config)
 
-    tau_by_n: dict[int, float] = {}
+    tau_by_n: dict[int, tuple[float, float, float]] = {}
 
     def _on_after_map(n_obs: int, params: GRUMParameters) -> None:
-        tau_by_n[n_obs] = social_choice_kendall_tau(data.params_true.delta, params.delta)
+        soc_tau = social_choice_kendall_tau(data.params_true.delta, params.delta)
+        mean_tau = personalized_mean_kendall_tau(data.params_true, params, data.agent_features, data.alternative_features)
+        raw_tau = raw_mean_kendall_tau(params, data.agent_features, data.alternative_features, list(data.rankings))
+        tau_by_n[n_obs] = (soc_tau, mean_tau, raw_tau)
 
     _ = engine.run(
         provider=provider,
@@ -187,8 +199,8 @@ def run_social_choice_elicitation_curve(
     )
 
     return [
-        ElicitationCurvePoint(n_observations=n, kendall_tau=tau_by_n[n])
-        for n in sorted(tau_by_n.keys())
+        ElicitationCurvePoint(n_observations=n, social_tau=t_soc, mean_person_tau=t_mean, raw_person_tau=t_raw)
+        for n, (t_soc, t_mean, t_raw) in sorted(tau_by_n.items())
     ]
 
 
@@ -215,7 +227,7 @@ def run_asymptotic_social_choice(
     if n_jobs == 1:
         build_dataset = _dataset_builder(dataset)
         for n in agent_counts:
-            taus: list[float] = []
+            taus: list[tuple[float, float, float]] = []
             for r in range(repeats):
                 data = build_dataset(n_agents=max(agent_counts), seed=seed + r)
                 init = _default_initial_params(data)
@@ -227,16 +239,27 @@ def run_asymptotic_social_choice(
                     agent_features=data.agent_features[:n],
                     alternative_features=data.alternative_features,
                 )
-                taus.append(social_choice_kendall_tau(data.params_true.delta, fit.params.delta))
+                
+                t_soc = social_choice_kendall_tau(data.params_true.delta, fit.params.delta)
+                t_mean = personalized_mean_kendall_tau(data.params_true, fit.params, data.agent_features, data.alternative_features)
+                t_raw = raw_mean_kendall_tau(fit.params, data.agent_features, data.alternative_features, list(data.rankings))
+                taus.append((t_soc, t_mean, t_raw))
                 if progress_update is not None:
                     progress_update(1)
 
-            points.append(AsymptoticPoint(n_agents=n, mean_tau=float(np.mean(taus))))
+            points.append(
+                AsymptoticPoint(
+                    n_agents=n, 
+                    social_tau=float(np.mean([x[0] for x in taus])),
+                    mean_person_tau=float(np.mean([x[1] for x in taus])),
+                    raw_person_tau=float(np.mean([x[2] for x in taus])),
+                )
+            )
 
         return points
 
     max_agents = max(agent_counts)
-    taus_by_n: dict[int, list[float]] = {n: [] for n in agent_counts}
+    taus_by_n: dict[int, list[tuple[float, float, float]]] = {n: [] for n in agent_counts}
     with ProcessPoolExecutor(max_workers=n_jobs) as ex:
         futures = [
             ex.submit(_single_asymptotic_task, dataset, n, r, max_agents, seed, config)
@@ -244,13 +267,21 @@ def run_asymptotic_social_choice(
             for r in range(repeats)
         ]
         for fut in as_completed(futures):
-            n, tau = fut.result()
-            taus_by_n[n].append(tau)
+            n, t_soc, t_mean, t_raw = fut.result()
+            taus_by_n[n].append((t_soc, t_mean, t_raw))
             if progress_update is not None:
                 progress_update(1)
 
     for n in agent_counts:
-        points.append(AsymptoticPoint(n_agents=n, mean_tau=float(np.mean(taus_by_n[n]))))
+        lst = taus_by_n[n]
+        points.append(
+            AsymptoticPoint(
+                n_agents=n, 
+                social_tau=float(np.mean([x[0] for x in lst])),
+                mean_person_tau=float(np.mean([x[1] for x in lst])),
+                raw_person_tau=float(np.mean([x[2] for x in lst])),
+            )
+        )
 
     return points
 
@@ -275,7 +306,7 @@ def compare_criteria_social_choice(
     if n_jobs <= 0:
         raise ValueError("n_jobs must be positive")
 
-    out: list[float] = []
+    out: list[tuple[float, float, float]] = []
 
     if n_jobs == 1:
         build_dataset = _dataset_builder(dataset)
@@ -316,12 +347,18 @@ def compare_criteria_social_choice(
                 alternatives=alternatives,
                 n_rounds=n_rounds,
             )
-            tau = social_choice_kendall_tau(data.params_true.delta, result.final_params.delta)
-            out.append(tau)
+            soc_tau = social_choice_kendall_tau(data.params_true.delta, result.final_params.delta)
+            mean_tau = personalized_mean_kendall_tau(data.params_true, result.final_params, data.agent_features, data.alternative_features)
+            raw_tau = raw_mean_kendall_tau(result.final_params, data.agent_features, data.alternative_features, list(data.rankings))
+            out.append((soc_tau, mean_tau, raw_tau))
             if progress_update is not None:
                 progress_update(n_rounds)
 
-        return float(np.mean(out))
+        return {
+            "social": float(np.mean([x[0] for x in out])),
+            "mean_person": float(np.mean([x[1] for x in out])),
+            "raw_person": float(np.mean([x[2] for x in out])),
+        }
 
     with ProcessPoolExecutor(max_workers=n_jobs) as ex:
         futures = [
@@ -334,4 +371,8 @@ def compare_criteria_social_choice(
             if progress_update is not None:
                 progress_update(n_rounds)
 
-    return float(np.mean(out))
+    return {
+        "social": float(np.mean([x[0] for x in out])),
+        "mean_person": float(np.mean([x[1] for x in out])),
+        "raw_person": float(np.mean([x[2] for x in out])),
+    }

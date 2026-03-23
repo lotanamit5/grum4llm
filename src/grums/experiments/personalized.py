@@ -9,8 +9,8 @@ import numpy as np
 from grums.core.parameters import GRUMParameters
 from grums.contracts import AgentRecord, AlternativeRecord, RankingObservation
 from grums.providers import OracleRankingProvider
-from grums.experiments.benchmark import ElicitationCurvePoint
-from grums.experiments.metrics import personalized_mean_kendall_tau, raw_mean_kendall_tau
+from grums.experiments.benchmark import ElicitationCurvePoint, AsymptoticPoint
+from grums.experiments.metrics import personalized_mean_kendall_tau, raw_mean_kendall_tau, social_choice_kendall_tau
 from grums.experiments.synthetic_data import SyntheticDataset, make_dataset_1, make_dataset_2, make_dataset_consistency
 from grums.inference import MCEMConfig, MCEMInference
 from grums.elicitation import (
@@ -25,11 +25,7 @@ from concurrent.futures import ProcessPoolExecutor, as_completed
 from typing import Callable
 
 
-@dataclass(frozen=True)
-class PersonalizedPoint:
-    n_agents: int
-    mean_tau: float
-    raw_mean_tau: float = 0.0
+
 
 
 def _default_initial_params(m: int, k: int, l: int) -> GRUMParameters:
@@ -42,15 +38,14 @@ def run_personalized_asymptotic(
     seed: int = 0,
     dataset: str = "dataset2",
     mcem_config: MCEMConfig | None = None,
-) -> list[PersonalizedPoint]:
+) -> list[AsymptoticPoint]:
     """Personalized-choice analogue of asymptotic social-choice runner."""
 
     config = mcem_config or MCEMConfig(n_iterations=8, n_gibbs_samples=30, n_gibbs_burnin=15)
-    points: list[PersonalizedPoint] = []
+    points: list[AsymptoticPoint] = []
 
     for n in agent_counts:
-        taus: list[float] = []
-        raw_taus: list[float] = []
+        taus: list[tuple[float, float, float]] = []
         for r in range(repeats):
             if dataset == "consistency":
                 data = make_dataset_consistency(n_agents=max(agent_counts), seed=seed + r)
@@ -72,23 +67,29 @@ def run_personalized_asymptotic(
                 alternative_features=data.alternative_features,
             )
 
-            tau = personalized_mean_kendall_tau(
+            t_soc = social_choice_kendall_tau(data.params_true.delta, fit.params.delta)
+            t_mean = personalized_mean_kendall_tau(
                 params_true=data.params_true,
                 params_est=fit.params,
                 agent_features=data.agent_features,
                 alternative_features=data.alternative_features,
             )
-            taus.append(tau)
-
-            raw_tau = raw_mean_kendall_tau(
-                params_true=data.params_true,
+            t_raw = raw_mean_kendall_tau(
+                params_est=fit.params,
                 agent_features=data.agent_features,
                 alternative_features=data.alternative_features,
                 observed_rankings=list(data.rankings[:n]),
             )
-            raw_taus.append(raw_tau)
+            taus.append((t_soc, t_mean, t_raw))
 
-        points.append(PersonalizedPoint(n_agents=n, mean_tau=float(np.mean(taus)), raw_mean_tau=float(np.mean(raw_taus))))
+        points.append(
+            AsymptoticPoint(
+                n_agents=n, 
+                social_tau=float(np.mean([x[0] for x in taus])),
+                mean_person_tau=float(np.mean([x[1] for x in taus])),
+                raw_person_tau=float(np.mean([x[2] for x in taus]))
+            )
+        )
 
     return points
 
@@ -109,7 +110,7 @@ def _single_criteria_personalized_task(
     criterion_name: str,
     seed: int,
     config: MCEMConfig,
-) -> float:
+) -> tuple[float, float, float]:
     build_dataset = _dataset_builder(dataset)
     # Figure 4 compares criteria over 100 agents consistently
     data = build_dataset(n_agents=100, seed=seed + repeat_index)
@@ -149,9 +150,14 @@ def _single_criteria_personalized_task(
         alternatives=alternatives,
         n_rounds=n_rounds,
     )
-    return personalized_mean_kendall_tau(
+    t_soc = social_choice_kendall_tau(data.params_true.delta, result.final_params.delta)
+    t_mean = personalized_mean_kendall_tau(
         data.params_true, result.final_params, data.agent_features, data.alternative_features
     )
+    t_raw = raw_mean_kendall_tau(
+        result.final_params, data.agent_features, data.alternative_features, list(data.rankings)
+    )
+    return t_soc, t_mean, t_raw
 
 
 def run_personalized_elicitation_curve(
@@ -197,12 +203,17 @@ def run_personalized_elicitation_curve(
     engine = AdaptiveElicitationEngine(criterion=criterion, mcem_config=config)
     init = _default_initial_params(m, kf, lf)
 
-    tau_by_n: dict[int, float] = {}
+    tau_by_n: dict[int, tuple[float, float, float]] = {}
 
     def _on_after_map(n_obs: int, params: GRUMParameters) -> None:
-        tau_by_n[n_obs] = personalized_mean_kendall_tau(
+        t_soc = social_choice_kendall_tau(data.params_true.delta, params.delta)
+        t_mean = personalized_mean_kendall_tau(
             data.params_true, params, data.agent_features, data.alternative_features
         )
+        t_raw = raw_mean_kendall_tau(
+            params, data.agent_features, data.alternative_features, list(data.rankings)
+        )
+        tau_by_n[n_obs] = (t_soc, t_mean, t_raw)
 
     _ = engine.run(
         provider=provider,
@@ -216,7 +227,8 @@ def run_personalized_elicitation_curve(
     )
 
     return [
-        ElicitationCurvePoint(n_observations=n, kendall_tau=tau_by_n[n]) for n in sorted(tau_by_n.keys())
+        ElicitationCurvePoint(n_observations=n, social_tau=soc, mean_person_tau=mean, raw_person_tau=r_tau) 
+        for n, (soc, mean, r_tau) in sorted(tau_by_n.items())
     ]
 
 
@@ -229,21 +241,25 @@ def compare_criteria_personalized_choice(
     mcem_config: MCEMConfig | None = None,
     n_jobs: int = 1,
     progress_update: Callable[[int], None] | None = None,
-) -> float:
+) -> dict[str, float]:
     """Compare personalized-choice quality after adaptive elicitation for a specific criterion."""
     config = mcem_config or MCEMConfig(n_iterations=6, n_gibbs_samples=25, n_gibbs_burnin=12)
     if n_jobs <= 0:
         raise ValueError("n_jobs must be positive")
 
-    out: list[float] = []
+    out: list[tuple[float, float, float]] = []
 
     if n_jobs == 1:
         for r in range(repeats):
-            tau = _single_criteria_personalized_task(dataset, n_rounds, r, criterion_name, seed, config)
-            out.append(tau)
+            val = _single_criteria_personalized_task(dataset, n_rounds, r, criterion_name, seed, config)
+            out.append(val)
             if progress_update is not None:
                 progress_update(n_rounds)
-        return float(np.mean(out))
+        return {
+            "social": float(np.mean([x[0] for x in out])),
+            "mean_person": float(np.mean([x[1] for x in out])),
+            "raw_person": float(np.mean([x[2] for x in out])),
+        }
 
     with ProcessPoolExecutor(max_workers=n_jobs) as ex:
         futures = [
@@ -255,4 +271,8 @@ def compare_criteria_personalized_choice(
             if progress_update is not None:
                 progress_update(n_rounds)
 
-    return float(np.mean(out))
+    return {
+        "social": float(np.mean([x[0] for x in out])),
+        "mean_person": float(np.mean([x[1] for x in out])),
+        "raw_person": float(np.mean([x[2] for x in out])),
+    }

@@ -27,7 +27,6 @@ except Exception:
 
 DEFAULTS = {
     "criterion": "social",
-    "metric": "social",
     "dataset_path": ".data",
     "repeats": 3,
     "rounds": 20,
@@ -75,7 +74,6 @@ def main(argv: list[str] | None = None) -> None:
     parser = argparse.ArgumentParser(description="Sushi runner")
     parser.add_argument("--config", type=str, default=pre_args.config)
     parser.add_argument("--criterion", choices=["random", "d_opt", "e_opt", "social", "personalized"], default=defaults["criterion"])
-    parser.add_argument("--metric", choices=["social", "personalized"], default=defaults["metric"])
     parser.add_argument("--dataset-path", type=str, default=defaults["dataset_path"])
     parser.add_argument("--repeats", type=int, default=defaults["repeats"])
     parser.add_argument("--rounds", type=int, default=defaults["rounds"])
@@ -118,7 +116,6 @@ def main(argv: list[str] | None = None) -> None:
         "repeats": args.repeats,
         "n_jobs": args.n_jobs,
         "started_at_utc": _utc_now_iso(),
-        "metric": args.metric,
     }
 
     timing = {}
@@ -141,7 +138,6 @@ def main(argv: list[str] | None = None) -> None:
             n_rounds=args.rounds,
             repeats=args.repeats,
             criterion_name=args.criterion,
-            metric=args.metric,
             seed=args.seed,
             mcem_config=cfg,
             n_jobs=args.n_jobs,

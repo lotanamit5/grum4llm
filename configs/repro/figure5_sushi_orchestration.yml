@@ -1,0 +1,16 @@
+run_prefix: "figure5-sushi"
+output_root: "results/repro"
+worker_script: "scripts/run_sushi_experiment.py"
+aggregations: ["criteria", "timing"]
+max_parallel_subprocesses: 5
+
+base_run:
+  dataset_path: ".data"
+  rounds: 100
+  repeats: 20
+  n_jobs: 3
+
+sweep:
+  seeds: [0]
+  parameters:
+    criterion: ["random", "d_opt", "e_opt", "social", "personalized"]

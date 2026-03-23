@@ -23,17 +23,7 @@ export MKL_NUM_THREADS=1
 source "$(conda info --base)/etc/profile.d/conda.sh"
 conda activate env
 
-CRITERIA=(random d_opt e_opt social personalized)
-
-for criterion in "${CRITERIA[@]}"; do
-    echo "[$(date '+%Y-%m-%d %H:%M:%S')] Sushi experiment: criterion=${criterion}..."
-    python scripts/run_sushi_experiment.py \
-        --criterion  "${criterion}" \
-        --metric     social \
-        --repeats    20 \
-        --rounds     100 \
-        --n-jobs     16 \
-        --output-json "results/repro/sushi/sushi_${criterion}.json"
-done
+echo "[$(date '+%Y-%m-%d %H:%M:%S')] Sushi experiment running via orchestrator..."
+python scripts/run_experiment_orchestration.py --config configs/repro/figure5_sushi_orchestration.yml
 
 echo "[$(date '+%Y-%m-%d %H:%M:%S')] Figure 5 (Sushi) complete."

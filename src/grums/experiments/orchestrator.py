@@ -289,29 +289,34 @@ def _json_payloads_from_paths(paths: list[Path]) -> list[tuple[Path, dict[str, A
 
 def aggregate_asymptotic(payloads: list[tuple[Path, dict[str, Any]]]) -> dict[str, Any]:
     rows: list[dict[str, Any]] = []
-    grouped: dict[int, list[float]] = {}
+    grouped: dict[tuple[int, str], list[float]] = {}
 
     for file_path, payload in payloads:
         seed = payload.get("seed")
         for pt in payload.get("asymptotic", []):
             n_agents = int(pt["n_agents"])
-            value = float(pt["mean_tau"])
-            rows.append(
-                {
-                    "file": file_path.name,
-                    "seed": seed,
-                    "n_agents": n_agents,
-                    "mean_tau": value,
-                }
-            )
-            grouped.setdefault(n_agents, []).append(value)
+            for m_key in ["social_tau", "mean_person_tau", "raw_person_tau", "mean_tau"]:
+                if m_key in pt and pt[m_key] is not None:
+                    value = float(pt[m_key])
+                    rows.append(
+                        {
+                            "file": file_path.name,
+                            "seed": seed,
+                            "n_agents": n_agents,
+                            "metric": m_key,
+                            "score": value,
+                        }
+                    )
+                    grouped.setdefault((n_agents, m_key), []).append(value)
 
     summary: list[dict[str, Any]] = []
-    for n_agents in sorted(grouped.keys()):
-        values = grouped[n_agents]
+    for key in sorted(grouped.keys()):
+        n_agents, metric_name = key
+        values = grouped[key]
         summary.append(
             {
                 "n_agents": n_agents,
+                "metric": metric_name,
                 "count": len(values),
                 "mean": float(mean(values)),
                 "std": float(pstdev(values)) if len(values) > 1 else 0.0,
@@ -325,7 +330,7 @@ def aggregate_asymptotic(payloads: list[tuple[Path, dict[str, Any]]]) -> dict[st
 
 def aggregate_criteria(payloads: list[tuple[Path, dict[str, Any]]]) -> dict[str, Any]:
     rows: list[dict[str, Any]] = []
-    grouped: dict[tuple[str, int], list[float]] = {}
+    grouped: dict[tuple[str, int, str], list[float]] = {}
 
     for file_path, payload in payloads:
         seed = payload.get("seed")
@@ -334,26 +339,43 @@ def aggregate_criteria(payloads: list[tuple[Path, dict[str, Any]]]) -> dict[str,
         if not isinstance(criteria, dict):
             continue
         for name, score in criteria.items():
-            value = float(score)
-            rows.append(
-                {
-                    "file": file_path.name,
-                    "seed": seed,
-                    "rounds": rounds,
-                    "criterion": str(name),
-                    "score": value,
-                }
-            )
-            grouped.setdefault((str(name), rounds), []).append(value)
+            if isinstance(score, dict):
+                for metric_name, m_score in score.items():
+                    value = float(m_score)
+                    rows.append(
+                        {
+                            "file": file_path.name,
+                            "seed": seed,
+                            "rounds": rounds,
+                            "criterion": str(name),
+                            "metric": metric_name,
+                            "score": value,
+                        }
+                    )
+                    grouped.setdefault((str(name), rounds, metric_name), []).append(value)
+            else:
+                value = float(score)
+                rows.append(
+                    {
+                        "file": file_path.name,
+                        "seed": seed,
+                        "rounds": rounds,
+                        "criterion": str(name),
+                        "metric": "kendall_tau",
+                        "score": value,
+                    }
+                )
+                grouped.setdefault((str(name), rounds, "kendall_tau"), []).append(value)
 
     summary: list[dict[str, Any]] = []
     for key in sorted(grouped.keys()):
-        criterion, rounds = key
+        criterion, rounds, metric_name = key
         values = grouped[key]
         summary.append(
             {
                 "criterion": criterion,
                 "rounds": rounds,
+                "metric": metric_name,
                 "count": len(values),
                 "mean": float(mean(values)),
                 "std": float(pstdev(values)) if len(values) > 1 else 0.0,
@@ -369,7 +391,7 @@ def aggregate_criteria_curve(payloads: list[tuple[Path, dict[str, Any]]]) -> dic
     """Combine per-seed adaptive elicitation curves (Fig. 3 / Fig. 4 reproduction)."""
 
     rows: list[dict[str, Any]] = []
-    grouped: dict[tuple[str, int], list[float]] = {}
+    grouped: dict[tuple[str, int, str], list[float]] = {}
 
     for file_path, payload in payloads:
         seed = payload.get("seed")
@@ -388,26 +410,30 @@ def aggregate_criteria_curve(payloads: list[tuple[Path, dict[str, Any]]]) -> dic
             if not isinstance(pt, dict):
                 continue
             n_agents = int(pt["n_observations"])
-            value = float(pt["kendall_tau"])
-            rows.append(
-                {
-                    "file": file_path.name,
-                    "seed": seed,
-                    "criterion": str(criterion),
-                    "n_observations": n_agents,
-                    "kendall_tau": value,
-                }
-            )
-            grouped.setdefault((str(criterion), n_agents), []).append(value)
+            for m_key in ["social_tau", "mean_person_tau", "raw_person_tau", "kendall_tau"]:
+                if m_key in pt and pt[m_key] is not None:
+                    value = float(pt[m_key])
+                    rows.append(
+                        {
+                            "file": file_path.name,
+                            "seed": seed,
+                            "criterion": str(criterion),
+                            "n_observations": n_agents,
+                            "metric": m_key,
+                            "score": value,
+                        }
+                    )
+                    grouped.setdefault((str(criterion), n_agents, m_key), []).append(value)
 
     summary: list[dict[str, Any]] = []
     for key in sorted(grouped.keys()):
-        crit, n_obs = key
+        crit, n_obs, metric_name = key
         values = grouped[key]
         summary.append(
             {
                 "criterion": crit,
                 "n_observations": n_obs,
+                "metric": metric_name,
                 "count": len(values),
                 "mean": float(mean(values)),
                 "std": float(pstdev(values)) if len(values) > 1 else 0.0,
