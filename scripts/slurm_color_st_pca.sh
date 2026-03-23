@@ -20,9 +20,9 @@ source "$(conda info --base)/etc/profile.d/conda.sh"
 conda activate env
 
 echo "[$(date '+%Y-%m-%d %H:%M:%S')] Phase 1: Generating SentenceTransformers PCA dataset..."
-python scripts/generate_color_dataset.py --config configs/color_sweep_st.yml
+python scripts/generate_llm_dataset.py --domain colors --config configs/llm/color_sweep_st.yml
 
 echo "[$(date '+%Y-%m-%d %H:%M:%S')] Phase 2: Running orchestrator active learning sweeps (ST PCA)..."
-python scripts/run_experiment_orchestration.py --config configs/color_sweep_st.yml
+python scripts/run_experiment_orchestration.py --config configs/llm/color_sweep_st.yml
 
 echo "[$(date '+%Y-%m-%d %H:%M:%S')] ST PCA color ranking experiment complete."
