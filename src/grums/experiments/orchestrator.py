@@ -298,8 +298,12 @@ def aggregate_asymptotic(payloads: list[tuple[Path, dict[str, Any]]]) -> dict[st
 
     for file_path, payload in payloads:
         seed = payload.get("seed")
-        for pt in payload.get("asymptotic", []):
-            n_agents = int(pt["n_agents"])
+        points = payload.get("asymptotic")
+        if points is None:
+            points = payload.get("criteria_curve", [])
+            
+        for pt in points:
+            n_agents = int(pt.get("n_agents", pt.get("n_observations", 0)))
             for m_key in ["social_tau", "mean_person_tau", "raw_person_tau", "mean_tau"]:
                 if m_key in pt and pt[m_key] is not None:
                     value = float(pt[m_key])
@@ -345,6 +349,7 @@ def aggregate_criteria(payloads: list[tuple[Path, dict[str, Any]]]) -> dict[str,
             continue
         for name, score in criteria.items():
             if isinstance(score, dict):
+                # If score is a dict (e.g. from sushi or new fit_grum after refit)
                 for metric_name, m_score in score.items():
                     value = float(m_score)
                     rows.append(
@@ -572,10 +577,16 @@ def run_orchestration(
         sh_path = run_dir / "slurm_runner.sh"
         lines = ["#!/usr/bin/env bash", ""]
         
+        import random
         for spec in specs:
             node = random.choice(nodes) if nodes else ""
             node_arg = f"-w {node} " if node else ""
-            cmd = f"sbatch -A {account} -p {partition} {node_arg}-o {spec.log_path} -e {spec.log_path} {worker_script} --config {spec.config_path} --output_json {spec.output_path}"
+            
+            # Wrap the python command to ensure Slurm handles it as a batch job script
+            # We also ensure absolute paths are used for everything.
+            # We use 'python3' or sys.executable to be safe.
+            inner_cmd = f"{sys.executable} {worker_script} --config {spec.config_path} --output_json {spec.output_path}"
+            cmd = f"sbatch -A {account} -p {partition} {node_arg}-o {spec.log_path} -e {spec.log_path} --wrap \"{inner_cmd}\""
             lines.append(cmd)
             
         sh_path.write_text("\n".join(lines) + "\n", encoding="utf-8")

@@ -11,7 +11,7 @@ from grums.providers.oracle import OracleRankingProvider
 
 DEFAULTS = {
     'ds0': {
-        "n_agents": 500,
+        "n_agents": 600,  # n=600 to accommodate 500-step asymptotic runs
         "n_alternatives": 5,
         "n_agent_features": 2,
         "n_alternative_features": 2,
@@ -46,12 +46,12 @@ class SyntheticProvider(OracleRankingProvider):
     def __init__(
         self,
         ds_name: str | None = None,
-        n_agents: int | None = None,
-        n_alternatives: int | None = None,
-        n_agent_features: int | None = None,
-        n_alternative_features: int | None = None,
-        sigma_noise: float | None = None,
-        delta_scale: float | None = None,
+        n_agents: int | None = None,           # Symbol: n
+        n_alternatives: int | None = None,     # Symbol: m
+        n_agent_features: int | None = None,   # Symbol: K
+        n_alternative_features: int | None = None, # Symbol: L
+        sigma_noise: float | None = None,      # Symbol: sigma_noise
+        delta_scale: float | None = None,      # Symbol: delta_scale
         seed: int = 0,
     ) -> None:
         """Initialize the synthetic data parameters and underlying rankings mapping.

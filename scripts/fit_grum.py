@@ -129,16 +129,30 @@ def main():
     checkpoints_dict = {}
 
     def _on_after_map(n_obs: int, params: GRUMParameters) -> None:
-        if checkpoints > 0 and (n_obs % checkpoints == 0 or n_obs == steps):
+        # User wants recording only at checkpoints (multiples of checkpoints or the last step)
+        # Assuming n_obs starts at 1 (initial seed) and goes up to steps + 1.
+        # We will record such that the 'step' index in JSON is n-1 (number of elicitation choices made).
+        elic_step = n_obs - 1
+        if checkpoints > 0 and (elic_step % checkpoints == 0 or elic_step == steps):
             s_tau = social_choice_kendall_tau(true_params.delta, params.delta)
             mp_tau = personalized_mean_kendall_tau(true_params, params, test_agent_features, test_alternative_features)
             rp_tau = raw_mean_kendall_tau(params, test_agent_features, test_alternative_features, test_rankings)
-            tau_by_n[n_obs] = {"social_tau": s_tau, "mean_person_tau": mp_tau, "raw_person_tau": rp_tau}
+            tau_by_n[elic_step] = {"social_tau": s_tau, "mean_person_tau": mp_tau, "raw_person_tau": rp_tau}
             
-            checkpoints_dict[n_obs] = {
-                "delta": params.delta.cpu().tolist(),
-                "interaction": params.interaction.cpu().tolist()
+            checkpoints_dict[elic_step] = {
+                "delta_est": params.delta.cpu().tolist(),
+                "B_est": params.interaction.cpu().tolist(),
+                "delta_true": true_params.delta.cpu().tolist(),
+                "B_true": true_params.interaction.cpu().tolist(),
+                "metrics": {
+                    "social_tau": s_tau,
+                    "mean_person_tau": mp_tau,
+                    "raw_person_tau": rp_tau,
+                }
             }
+
+    # Record initial state (0 observations made) if checkpoints > 0
+    _on_after_map(1, init_params)
 
     engine = AdaptiveElicitationEngine(criterion=criterion, mcem_config=mcem_config)
     
@@ -178,8 +192,10 @@ def main():
         "true_interaction": true_params.interaction.cpu().tolist(),
         "final_tau": curve_data[-1]["social_tau"] if curve_data else 0.0,
         "checkpoints": checkpoints_dict,
-        "total_seconds": total_seconds,
-        "average_step_seconds": average_step_seconds,
+        "timing": {
+            "total_seconds": total_seconds,
+            "average_step_seconds": average_step_seconds,
+        },
         "finished_at_utc": _utc_now_iso(),
     }
 
