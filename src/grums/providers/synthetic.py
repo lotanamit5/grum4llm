@@ -11,7 +11,7 @@ from grums.providers.oracle import OracleRankingProvider
 
 DEFAULTS = {
     'ds0': {
-        "n_agents": 600,  # n=600 to accommodate 500-step asymptotic runs
+        "n_agents": 500,
         "n_alternatives": 5,
         "n_agent_features": 2,
         "n_alternative_features": 2,
