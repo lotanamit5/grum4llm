@@ -3,8 +3,8 @@ from pathlib import Path
 import pandas as pd
 import numpy as np
 
-def load_metrics_for_datasets(run_dir: str | Path, datasets: list[str] | None = None) -> pd.DataFrame:
-    """Loads and aggregates criteria curves filtering dynamically against target datasets dynamically grouping."""
+def load_metrics_for_datasets(run_dir: str | Path, datasets: list[str] | None = None, pivot_metrics: bool = False, metric_filter: str | None = None) -> pd.DataFrame:
+    """Loads and aggregates criteria curves filtering dynamically against target datasets."""
     run_dir = Path(run_dir)
     outputs_dir = run_dir / "outputs"
     if not outputs_dir.exists():
@@ -24,30 +24,35 @@ def load_metrics_for_datasets(run_dir: str | Path, datasets: list[str] | None = 
             continue
             
         criterion = data.get("criterion")
+        seed = data.get("seed")
         curve = data.get("criteria_curve", [])
-        for pt in curve:
-            n_obs = pt.get("n_observations")
-            for m_key in ["social_tau", "mean_person_tau", "raw_person_tau"]:
-                if m_key in pt and pt[m_key] is not None:
-                    rows.append({
-                        "dataset": dataset,
-                        "criterion": criterion,
-                        "n_observations": n_obs,
-                        "metric": m_key,
-                        "score": float(pt[m_key])
-                    })
+        
+        if pivot_metrics:
+            for pt in curve:
+                row = {
+                    "step": pt.get("n_observations"),
+                    "seed": seed,
+                    "criteria": criterion,
+                    "dataset": dataset
+                }
+                for m_key in ["social_tau", "mean_person_tau", "raw_person_tau"]:
+                    if m_key in pt and pt[m_key] is not None:
+                        row[m_key] = float(pt[m_key])
+                rows.append(row)
+        else:
+            for pt in curve:
+                for m_key in ["social_tau", "mean_person_tau", "raw_person_tau"]:
+                    if m_key in pt and pt[m_key] is not None:
+                        if metric_filter and m_key != metric_filter:
+                            continue
+                        rows.append({
+                            "dataset": dataset,
+                            "seed": seed,
+                            "criteria": criterion,
+                            "step": pt.get("n_observations"),
+                            "metric": m_key,
+                            "value": float(pt[m_key])
+                        })
                     
     df = pd.DataFrame(rows)
-    if df.empty:
-        return df
-        
-    # Aggregate means and standard deviations combining whatever matching datasets we scraped
-    agg_df = df.groupby(["criterion", "n_observations", "metric"])["score"].agg(["mean", "std"]).reset_index()
-    agg_df["std"] = agg_df["std"].fillna(0.0)
-    return agg_df
-    
-def smooth_curve(y, window_size: int = 10):
-    """Calculates a discrete rolling metric using Pandas, avoiding np dependencies constraints natively."""
-    if window_size <= 1:
-        return np.array(y)
-    return pd.Series(y).rolling(window=window_size, min_periods=1).mean().values
+    return df
