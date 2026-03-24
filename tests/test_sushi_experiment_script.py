@@ -7,7 +7,7 @@ import sys
 from pathlib import Path
 from unittest.mock import patch
 
-import numpy as np
+import torch
 import pytest
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -29,15 +29,15 @@ def test_sushi_module_imports_cleanly() -> None:
 
 def _make_fake_dataset() -> "SushiDataset":
     from grums.datasets.sushi import SushiDataset
+    import numpy as np
 
     rng = np.random.default_rng(0)
-    n_agents = 1200  # >1000 so ground truth + test pool both exist
+    n_agents = 1200
     n_alt = 10
     n_agent_feat = 10
     n_alt_feat = 7
-    agent_features = rng.random((n_agents, n_agent_feat)).astype(float)
-    alternative_features = rng.random((n_alt, n_alt_feat)).astype(float)
-    # Each ranking is a permutation of 0..n_alt-1 (top-10 out of 10)
+    agent_features = rng.random((n_agents, n_agent_feat)).astype(np.float64)
+    alternative_features = rng.random((n_alt, n_alt_feat)).astype(np.float64)
     rankings = [tuple(rng.permutation(n_alt).tolist()) for _ in range(n_agents)]
     return SushiDataset(
         agent_features=agent_features,
@@ -83,7 +83,9 @@ def test_runner_script_produces_valid_json(tmp_path: Path) -> None:
     assert "timing" in payload, "Output JSON must contain 'timing'"
     assert "started_at_utc" in payload
     assert "finished_at_utc" in payload
-    assert isinstance(payload["criteria"]["random"], float)
+    assert isinstance(payload["criteria"]["random"], dict)
+    assert "social" in payload["criteria"]["random"]
+    assert isinstance(payload["criteria"]["random"]["social"], float)
 
 
 def _load_sushi_runner_fresh(module_name: str = "sushi_runner_criteria_test"):
@@ -102,7 +104,7 @@ def _load_sushi_runner_fresh(module_name: str = "sushi_runner_criteria_test"):
 
 def test_runner_script_cli_recognises_all_criteria(tmp_path: Path) -> None:
     """Verify the script accepts all valid criterion names."""
-    with patch("grums.experiments.sushi.compare_criteria_sushi_choice", return_value=0.42):
+    with patch("grums.experiments.sushi.compare_criteria_sushi_choice", return_value={"social": 0.42, "mean_person": 0.41, "raw_person": 0.40}):
         mod = _load_sushi_runner_fresh()
         for criterion in ["random", "d_opt", "e_opt", "social", "personalized"]:
             out = tmp_path / f"result_{criterion}.json"
@@ -132,7 +134,7 @@ def test_runner_script_cli_recognises_all_criteria(tmp_path: Path) -> None:
             )
             payload = json.loads(out.read_text(encoding="utf-8"))
             assert criterion in payload["criteria"]
-            assert payload["criteria"][criterion] == 0.42
+            assert payload["criteria"][criterion]["social"] == 0.42
 
 
 def test_runner_script_config_file(tmp_path: Path) -> None:

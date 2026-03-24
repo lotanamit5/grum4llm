@@ -4,12 +4,11 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 
-import numpy as np
-from numpy.typing import NDArray
+import torch
 
 from grums.core.parameters import GRUMParameters
 
-FloatArray = NDArray[np.float64]
+Tensor = torch.Tensor
 
 
 @dataclass(frozen=True)
@@ -25,31 +24,36 @@ class SyntheticDatasetConfig:
 @dataclass(frozen=True)
 class SyntheticDataset:
     params_true: GRUMParameters
-    agent_features: FloatArray
-    alternative_features: FloatArray
+    agent_features: Tensor
+    alternative_features: Tensor
     rankings: tuple[tuple[int, ...], ...]
     sigma_noise: float
 
 
 def _generate_dataset(config: SyntheticDatasetConfig, seed: int) -> SyntheticDataset:
-    rng = np.random.default_rng(seed)
+    torch.manual_seed(seed)
+    device = torch.device("cpu") # Generate on CPU for consistency, move to device later if needed
 
-    x = rng.normal(0.0, 1.0, size=(config.n_agents, config.n_agent_features))
-    z = rng.normal(0.0, 1.0, size=(config.n_alternatives, config.n_alternative_features))
+    x = torch.randn((config.n_agents, config.n_agent_features), dtype=torch.float64, device=device)
+    z = torch.randn((config.n_alternatives, config.n_alternative_features), dtype=torch.float64, device=device)
 
-    delta = config.delta_scale * rng.normal(1.0, 1.0, size=(config.n_alternatives,))
-    interaction = rng.normal(0.0, 1.0, size=(config.n_agent_features, config.n_alternative_features))
+    # Use Normal(1.0, 1.0) for delta as in the original code
+    delta = config.delta_scale * (torch.randn(config.n_alternatives, dtype=torch.float64, device=device) + 1.0)
+    interaction = torch.randn((config.n_agent_features, config.n_alternative_features), dtype=torch.float64, device=device)
 
-    params_true = GRUMParameters(delta=delta.astype(float), interaction=interaction.astype(float))
+    params_true = GRUMParameters(delta=delta, interaction=interaction)
 
-    mu = x @ interaction @ z.T + delta.reshape(1, config.n_alternatives)
-    noisy_u = mu + rng.normal(0.0, config.sigma_noise, size=mu.shape)
-    rankings = tuple(tuple(np.argsort(-row)) for row in noisy_u)
+    mu = x @ interaction @ z.T + delta.view(1, config.n_alternatives)
+    noisy_u = mu + torch.randn(mu.shape, dtype=torch.float64, device=device) * config.sigma_noise
+    
+    # argsort along axis 1 (alternatives), descending
+    rankings_tensor = torch.argsort(noisy_u, dim=1, descending=True)
+    rankings = tuple(tuple(row.tolist()) for row in rankings_tensor)
 
     return SyntheticDataset(
         params_true=params_true,
-        agent_features=x.astype(float),
-        alternative_features=z.astype(float),
+        agent_features=x,
+        alternative_features=z,
         rankings=rankings,
         sigma_noise=config.sigma_noise,
     )

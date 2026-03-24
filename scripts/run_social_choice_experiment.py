@@ -220,7 +220,7 @@ def main(argv: list[str] | None = None) -> None:
 
         points = run_asymptotic_social_choice(
             agent_counts=counts,
-            dataset=args.dataset,
+            dataset_name=args.dataset,
             repeats=args.repeats,
             seed=args.seed,
             mcem_config=cfg,
@@ -262,7 +262,7 @@ def main(argv: list[str] | None = None) -> None:
                 criteria_bar.update(delta)
 
         score = compare_criteria_social_choice(
-            dataset=args.dataset,
+            dataset_name=args.dataset,
             n_rounds=args.rounds,
             repeats=args.repeats,
             criterion_name=args.criterion,
@@ -298,7 +298,7 @@ def main(argv: list[str] | None = None) -> None:
         )
         t0 = perf_counter()
         curve_points = run_social_choice_elicitation_curve(
-            dataset=args.dataset,
+            dataset_name=args.dataset,
             n_rounds=args.rounds,
             criterion_name=args.criterion,
             seed=args.seed,

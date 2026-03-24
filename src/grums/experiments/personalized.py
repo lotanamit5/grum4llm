@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 
+import torch
 import numpy as np
 
 from grums.core.parameters import GRUMParameters
@@ -24,12 +25,14 @@ from grums.elicitation import (
 from concurrent.futures import ProcessPoolExecutor, as_completed
 from typing import Callable
 
+Tensor = torch.Tensor
 
 
-
-
-def _default_initial_params(m: int, k: int, l: int) -> GRUMParameters:
-    return GRUMParameters(delta=np.zeros(m, dtype=float), interaction=np.zeros((k, l), dtype=float))
+def _default_initial_params(m: int, k: int, l: int, device: torch.device) -> GRUMParameters:
+    return GRUMParameters(
+        delta=torch.zeros(m, dtype=torch.float64, device=device), 
+        interaction=torch.zeros((k, l), dtype=torch.float64, device=device)
+    )
 
 
 def run_personalized_asymptotic(
@@ -43,6 +46,7 @@ def run_personalized_asymptotic(
 
     config = mcem_config or MCEMConfig(n_iterations=8, n_gibbs_samples=30, n_gibbs_burnin=15)
     points: list[AsymptoticPoint] = []
+    device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
     for n in agent_counts:
         taus: list[tuple[float, float, float]] = []
@@ -54,30 +58,46 @@ def run_personalized_asymptotic(
             else:
                 data = make_dataset_2(n_agents=max(agent_counts), seed=seed + r)
                 
-            init = _default_initial_params(
-                m=data.params_true.n_alternatives,
-                k=data.agent_features.shape[1],
-                l=data.alternative_features.shape[1],
-            )
-            inf = MCEMInference(config)
-            fit = inf.fit_map(
-                initial_params=init,
-                rankings=list(data.rankings[:n]),
-                agent_features=data.agent_features[:n],
-                alternative_features=data.alternative_features,
+            # Move data to target device
+            agent_features = data.agent_features.to(device)
+            alt_features = data.alternative_features.to(device)
+            true_params = GRUMParameters(
+                delta=data.params_true.delta.to(device),
+                interaction=data.params_true.interaction.to(device)
             )
 
-            t_soc = social_choice_kendall_tau(data.params_true.delta, fit.params.delta)
+            init = _default_initial_params(
+                m=data.params_true.n_alternatives,
+                k=int(data.agent_features.size(1)),
+                l=int(data.alternative_features.size(1)),
+                device=device
+            )
+            inf = MCEMInference(config)
+            
+            # Convert rankings to RankingObservation list
+            obs_list = [
+                RankingObservation(agent_id=f"a{i}", ranking=data.rankings[i]) 
+                for i in range(n)
+            ]
+            
+            fit = inf.fit_map(
+                initial_params=init,
+                observations=obs_list,
+                agent_features=agent_features[:n],
+                alternative_features=alt_features,
+            )
+
+            t_soc = social_choice_kendall_tau(true_params.delta, fit.params.delta)
             t_mean = personalized_mean_kendall_tau(
-                params_true=data.params_true,
+                params_true=true_params,
                 params_est=fit.params,
-                agent_features=data.agent_features,
-                alternative_features=data.alternative_features,
+                agent_features=agent_features,
+                alternative_features=alt_features,
             )
             t_raw = raw_mean_kendall_tau(
                 params_est=fit.params,
-                agent_features=data.agent_features,
-                alternative_features=data.alternative_features,
+                agent_features=agent_features,
+                alternative_features=alt_features,
                 observed_rankings=list(data.rankings[:n]),
             )
             taus.append((t_soc, t_mean, t_raw))
@@ -114,10 +134,19 @@ def _single_criteria_personalized_task(
     build_dataset = _dataset_builder(dataset)
     # Figure 4 compares criteria over 100 agents consistently
     data = build_dataset(n_agents=100, seed=seed + repeat_index)
+    device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
     m = data.params_true.n_alternatives
 
-    alternatives = [AlternativeRecord(alternative_id=j, features=data.alternative_features[j]) for j in range(m)]
-    agents = [AgentRecord(agent_id=f"a{i}", features=data.agent_features[i]) for i in range(data.agent_features.shape[0])]
+    # Move data to Tensors and device
+    agent_features = data.agent_features.to(device)
+    alt_features = data.alternative_features.to(device)
+    true_params = GRUMParameters(
+        delta=data.params_true.delta.to(device),
+        interaction=data.params_true.interaction.to(device)
+    )
+
+    alternatives = [AlternativeRecord(alternative_id=j, features=alt_features[j]) for j in range(m)]
+    agents = [AgentRecord(agent_id=f"a{i}", features=agent_features[i]) for i in range(agent_features.size(0))]
     ranking_by_agent = {f"a{i}": data.rankings[i] for i in range(len(data.rankings))}
     provider = OracleRankingProvider(ranking_by_agent)
 
@@ -128,34 +157,37 @@ def _single_criteria_personalized_task(
     criteria = {
         "random": RandomCriterion(seed + 1000 + repeat_index),
         "d_opt": DOptimalityCriterion(),
-        "e_opt": EOptimalityCriterion(),
+        "EOptimalityCriterion": EOptimalityCriterion(),
         "social": SocialChoiceCriterion(n_alternatives=m),
         "personalized": PersonalizedChoiceCriterion(
             n_alternatives=m,
-            n_agent_features=data.agent_features.shape[1],
-            n_alternative_features=data.alternative_features.shape[1],
-            alternative_features=data.alternative_features,
-            population_agents=data.agent_features,
+            n_agent_features=int(agent_features.size(1)),
+            n_alternative_features=int(alt_features.size(1)),
+            alternative_features=alt_features,
+            population_agents=agent_features,
         ),
     }
 
     criterion = criteria[criterion_name]
     engine = AdaptiveElicitationEngine(criterion=criterion, mcem_config=config)
+    
+    init = _default_initial_params(m, int(agent_features.size(1)), int(alt_features.size(1)), device)
+    
     result = engine.run(
         provider=provider,
-        initial_params=_default_initial_params(m, data.agent_features.shape[1], data.alternative_features.shape[1]),
+        initial_params=init,
         initial_observations=[seed_obs],
         observed_agents=observed_agents,
         candidate_agents=candidates,
         alternatives=alternatives,
         n_rounds=n_rounds,
     )
-    t_soc = social_choice_kendall_tau(data.params_true.delta, result.final_params.delta)
+    t_soc = social_choice_kendall_tau(true_params.delta, result.final_params.delta)
     t_mean = personalized_mean_kendall_tau(
-        data.params_true, result.final_params, data.agent_features, data.alternative_features
+        true_params, result.final_params, agent_features, alt_features
     )
     t_raw = raw_mean_kendall_tau(
-        result.final_params, data.agent_features, data.alternative_features, list(data.rankings)
+        result.final_params, agent_features, alt_features, list(data.rankings)
     )
     return t_soc, t_mean, t_raw
 
@@ -173,11 +205,20 @@ def run_personalized_elicitation_curve(
     build_dataset = _dataset_builder(dataset)
     n_pool = max(100, n_rounds + 1)
     data = build_dataset(n_agents=n_pool, seed=seed)
+    device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
     m = data.params_true.n_alternatives
-    kf, lf = data.agent_features.shape[1], data.alternative_features.shape[1]
+    
+    agent_features = data.agent_features.to(device)
+    alt_features = data.alternative_features.to(device)
+    true_params = GRUMParameters(
+        delta=data.params_true.delta.to(device),
+        interaction=data.params_true.interaction.to(device)
+    )
+    
+    kf, lf = int(agent_features.size(1)), int(alt_features.size(1))
 
-    alternatives = [AlternativeRecord(alternative_id=j, features=data.alternative_features[j]) for j in range(m)]
-    agents = [AgentRecord(agent_id=f"a{i}", features=data.agent_features[i]) for i in range(data.agent_features.shape[0])]
+    alternatives = [AlternativeRecord(alternative_id=j, features=alt_features[j]) for j in range(m)]
+    agents = [AgentRecord(agent_id=f"a{i}", features=agent_features[i]) for i in range(agent_features.size(0))]
     ranking_by_agent = {f"a{i}": data.rankings[i] for i in range(len(data.rankings))}
     provider = OracleRankingProvider(ranking_by_agent)
 
@@ -194,24 +235,24 @@ def run_personalized_elicitation_curve(
             n_alternatives=m,
             n_agent_features=kf,
             n_alternative_features=lf,
-            alternative_features=data.alternative_features,
-            population_agents=data.agent_features,
+            alternative_features=alt_features,
+            population_agents=agent_features,
         ),
     }
 
     criterion = criteria[criterion_name]
     engine = AdaptiveElicitationEngine(criterion=criterion, mcem_config=config)
-    init = _default_initial_params(m, kf, lf)
+    init = _default_initial_params(m, kf, lf, device)
 
     tau_by_n: dict[int, tuple[float, float, float]] = {}
 
     def _on_after_map(n_obs: int, params: GRUMParameters) -> None:
-        t_soc = social_choice_kendall_tau(data.params_true.delta, params.delta)
+        t_soc = social_choice_kendall_tau(true_params.delta, params.delta)
         t_mean = personalized_mean_kendall_tau(
-            data.params_true, params, data.agent_features, data.alternative_features
+            true_params, params, agent_features, alt_features
         )
         t_raw = raw_mean_kendall_tau(
-            params, data.agent_features, data.alternative_features, list(data.rankings)
+            params, agent_features, alt_features, list(data.rankings)
         )
         tau_by_n[n_obs] = (t_soc, t_mean, t_raw)
 

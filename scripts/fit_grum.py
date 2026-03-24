@@ -3,6 +3,7 @@
 import argparse
 import yaml
 import json
+import torch
 import numpy as np
 from pathlib import Path
 from datetime import datetime, timezone
@@ -54,6 +55,8 @@ def main():
         n_gibbs_burnin=mcem_cfg.get("n_gibbs_burnin", 15),
     )
 
+    device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+
     if dataset_name in ("ds0", "ds1", "ds2"):
         provider = SyntheticProvider(ds_name=dataset_name, seed=seed)
         true_params = provider.true_params
@@ -61,32 +64,39 @@ def main():
         alternatives = provider.alternatives
         ranking_by_agent = provider._ranking_by_agent_id
         
-        test_agent_features = np.array([a.features for a in agents])
-        test_alternative_features = np.array([a.features for a in alternatives])
+        test_agent_features = torch.vstack([a.features for a in agents]).to(device).to(torch.float64)
+        test_alternative_features = torch.vstack([a.features for a in alternatives]).to(device).to(torch.float64)
         test_rankings = [ranking_by_agent[a.agent_id] for a in agents]
 
     elif dataset_name == "sushi":
         dataset_path = cfg.get("dataset_path", ".data")
         dataset, true_params, train_idx = _get_sushi_ground_truth(dataset_path, mcem_config, seed)
         m = dataset.n_alternatives
-        alternatives = [AlternativeRecord(alternative_id=j, features=dataset.alternative_features[j]) for j in range(m)]
+        
+        # Convert dataset features to Tensors
+        dataset_alt_features = torch.from_numpy(dataset.alternative_features).to(device).to(torch.float64)
+        dataset_agent_features = torch.from_numpy(dataset.agent_features).to(device).to(torch.float64)
+        
+        alternatives = [AlternativeRecord(alternative_id=j, features=dataset_alt_features[j]) for j in range(m)]
 
         all_indices = np.arange(len(dataset.agent_features))
         test_indices = np.array([i for i in all_indices if i not in train_idx])
-        test_agent_features = dataset.agent_features[test_indices]
-        test_rankings = [dataset.rankings[i] for i in test_indices]
+        
+        test_agent_features_all = dataset_agent_features[test_indices]
+        test_rankings_all = [dataset.rankings[i] for i in test_indices]
 
         rng = np.random.default_rng(seed)
-        idx = rng.choice(len(test_agent_features), size=100, replace=False)
-        selected_features = test_agent_features[idx]
-        selected_rankings = [test_rankings[i] for i in idx]
+        idx = rng.choice(len(test_agent_features_all), size=100, replace=False)
+        
+        selected_features = test_agent_features_all[idx]
+        selected_rankings = [test_rankings_all[i] for i in idx]
 
         agents = [AgentRecord(agent_id=f"a_{i}", features=feat) for i, feat in enumerate(selected_features)]
         ranking_by_agent = {a.agent_id: r for a, r in zip(agents, selected_rankings)}
         provider = OracleRankingProvider(ranking_by_agent)
         
         test_agent_features = selected_features
-        test_alternative_features = dataset.alternative_features
+        test_alternative_features = dataset_alt_features
         test_rankings = selected_rankings
     else:
         raise ValueError(f"Unknown dataset: {dataset_name}")
@@ -99,8 +109,8 @@ def main():
         "social": SocialChoiceCriterion(n_alternatives=m),
         "personalized": PersonalizedChoiceCriterion(
             n_alternatives=m,
-            n_agent_features=test_agent_features.shape[1],
-            n_alternative_features=test_alternative_features.shape[1],
+            n_agent_features=int(test_agent_features.size(1)),
+            n_alternative_features=int(test_alternative_features.size(1)),
             alternative_features=test_alternative_features,
             population_agents=test_agent_features,
         ),
@@ -109,8 +119,8 @@ def main():
 
     from grums.core.parameters import GRUMParameters
     init_params = GRUMParameters(
-        delta=np.zeros(m, dtype=float),
-        interaction=np.zeros((test_agent_features.shape[1], test_alternative_features.shape[1]), dtype=float)
+        delta=torch.zeros(m, device=device, dtype=torch.float64),
+        interaction=torch.zeros((test_agent_features.size(1), test_alternative_features.size(1)), device=device, dtype=torch.float64)
     )
 
     seed_obs = RankingObservation(agent_id=agents[0].agent_id, ranking=ranking_by_agent[agents[0].agent_id])
@@ -126,8 +136,8 @@ def main():
             tau_by_n[n_obs] = {"social_tau": s_tau, "mean_person_tau": mp_tau, "raw_person_tau": rp_tau}
             
             checkpoints_dict[n_obs] = {
-                "delta": params.delta.tolist(),
-                "interaction": params.interaction.tolist()
+                "delta": params.delta.cpu().tolist(),
+                "interaction": params.interaction.cpu().tolist()
             }
 
     engine = AdaptiveElicitationEngine(criterion=criterion, mcem_config=mcem_config)
@@ -164,8 +174,8 @@ def main():
         "steps": steps,
         "criterion": criterion_name,
         "criteria_curve": curve_data,
-        "true_delta": true_params.delta.tolist(),
-        "true_interaction": true_params.interaction.tolist(),
+        "true_delta": true_params.delta.cpu().tolist(),
+        "true_interaction": true_params.interaction.cpu().tolist(),
         "final_tau": curve_data[-1]["social_tau"] if curve_data else 0.0,
         "checkpoints": checkpoints_dict,
         "total_seconds": total_seconds,

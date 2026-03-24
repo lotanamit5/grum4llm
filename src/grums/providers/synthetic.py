@@ -3,9 +3,9 @@
 from __future__ import annotations
 
 import warnings
-import numpy as np
+import torch
 
-from grums.contracts import AgentRecord, AlternativeRecord, PreferenceProvider
+from grums.contracts import AgentRecord, AlternativeRecord
 from grums.experiments.synthetic_data import SyntheticDatasetConfig, _generate_dataset
 from grums.providers.oracle import OracleRankingProvider
 

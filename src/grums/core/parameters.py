@@ -4,10 +4,9 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 
-import numpy as np
-from numpy.typing import NDArray
+import torch
 
-FloatArray = NDArray[np.float64]
+Tensor = torch.Tensor
 
 
 @dataclass(frozen=True)
@@ -19,15 +18,15 @@ class GRUMParameters:
         interaction: Interaction matrix B of shape (K, L).
     """
 
-    delta: FloatArray
-    interaction: FloatArray
+    delta: Tensor
+    interaction: Tensor
 
     def __post_init__(self) -> None:
-        if self.delta.ndim != 1:
+        if self.delta.dim() != 1:
             raise ValueError("delta must be a 1D vector")
-        if self.interaction.ndim != 2:
+        if self.interaction.dim() != 2:
             raise ValueError("interaction must be a 2D matrix")
-        if not np.isfinite(self.delta).all() or not np.isfinite(self.interaction).all():
+        if not torch.isfinite(self.delta).all() or not torch.isfinite(self.interaction).all():
             raise ValueError("all parameter values must be finite")
 
     @property

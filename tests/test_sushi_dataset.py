@@ -12,13 +12,13 @@ def test_load_sushi_dimensions() -> None:
     
     dataset = load_sushi(data_dir=data_dir)
     
-    # Verify dimensions based on Kamishima's spec
+    # Verify dimensions based on Kamishima's spec (top 10 subset)
     assert dataset.n_agents == 5000, "Should have 5000 agents"
-    assert dataset.n_alternatives == 100, "Should have 100 alternatives"
+    assert dataset.n_alternatives == 10, "Should have 10 alternatives"
     assert len(dataset.rankings) == 5000, "Should have 5000 rankings"
     
     assert dataset.agent_features.shape == (5000, 10), "10 attributes per agent"
-    assert dataset.alternative_features.shape == (100, 7), "7 attributes per alternative"
+    assert dataset.alternative_features.shape == (10, 7), "7 attributes per alternative"
     
     # Check that rankings actually contain 0-99 item IDs
     first_ranking = dataset.rankings[0]

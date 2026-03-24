@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import torch
 import numpy as np
 from pathlib import Path
 from dataclasses import dataclass
@@ -22,6 +23,7 @@ from grums.elicitation import (
 from grums.experiments.metrics import social_choice_kendall_tau, personalized_mean_kendall_tau, raw_mean_kendall_tau
 from grums.providers import OracleRankingProvider
 
+Tensor = torch.Tensor
 
 # Global cache for the ground-truth fit so processes don't redundantly re-fit 1000 agents
 _SUSHI_FIT_CACHE = None
@@ -32,25 +34,27 @@ def _get_sushi_ground_truth(dataset_path: str, mcem_config: MCEMConfig, seed: in
         return _SUSHI_FIT_CACHE
 
     dataset = load_sushi(dataset_path)
+    device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
     
     # 1000 agents for ground truth
     rng = np.random.default_rng(seed)
     idx = rng.choice(len(dataset.agent_features), size=1000, replace=False)
     
-    train_agents = dataset.agent_features[idx]
+    # Convert dataset components to Tensors
+    train_agents = torch.from_numpy(dataset.agent_features[idx]).to(device).to(torch.float64)
     train_rankings = [dataset.rankings[i] for i in idx]
-    alternatives = dataset.alternative_features
+    alternatives = torch.from_numpy(dataset.alternative_features).to(device).to(torch.float64)
     
     from grums.core.parameters import GRUMParameters
     init = GRUMParameters(
-        delta=np.zeros(alternatives.shape[0]),
-        interaction=np.zeros((train_agents.shape[1], alternatives.shape[1]))
+        delta=torch.zeros(alternatives.size(0), device=device, dtype=torch.float64),
+        interaction=torch.zeros((train_agents.size(1), alternatives.size(1)), device=device, dtype=torch.float64)
     )
     
     inf = MCEMInference(mcem_config)
     fit = inf.fit_map(
         initial_params=init,
-        rankings=list(train_rankings),
+        observations=[RankingObservation(agent_id=f"gt_{i}", ranking=r) for i, r in enumerate(train_rankings)],
         agent_features=train_agents,
         alternative_features=alternatives,
     )
@@ -67,9 +71,12 @@ def _single_criteria_sushi_task(
     config: MCEMConfig,
 ) -> dict[str, float]:
     dataset, true_params, train_idx = _get_sushi_ground_truth(dataset_path, config, seed)
+    device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
     m = dataset.n_alternatives
     
-    alternatives = [AlternativeRecord(alternative_id=j, features=dataset.alternative_features[j]) for j in range(m)]
+    # Alternatives features to Tensor
+    alt_features_tensor = torch.from_numpy(dataset.alternative_features).to(device).to(torch.float64)
+    alternatives = [AlternativeRecord(alternative_id=j, features=alt_features_tensor[j]) for j in range(m)]
     
     all_indices = np.arange(len(dataset.agent_features))
     test_indices = np.array([i for i in all_indices if i not in train_idx])
@@ -81,10 +88,12 @@ def _single_criteria_sushi_task(
     rng = np.random.default_rng(seed + repeat_index)
     idx = rng.choice(len(test_agent_features), size=100, replace=False)
     
-    selected_features = test_agent_features[idx]
+    selected_features_np = test_agent_features[idx]
     selected_rankings = [test_rankings[i] for i in idx]
     
-    agents = [AgentRecord(agent_id=f"a_{i}", features=feat) for i, feat in enumerate(selected_features)]
+    selected_features = torch.from_numpy(selected_features_np).to(device).to(torch.float64)
+    
+    agents = [AgentRecord(agent_id=f"a_{i}", features=selected_features[i]) for i in range(len(selected_features))]
     ranking_by_agent = {a.agent_id: r for a, r in zip(agents, selected_rankings)}
     
     provider = OracleRankingProvider(ranking_by_agent)
@@ -97,9 +106,9 @@ def _single_criteria_sushi_task(
         "social": SocialChoiceCriterion(n_alternatives=m),
         "personalized": PersonalizedChoiceCriterion(
             n_alternatives=m,
-            n_agent_features=selected_features.shape[1],
-            n_alternative_features=dataset.alternative_features.shape[1],
-            alternative_features=dataset.alternative_features,
+            n_agent_features=int(selected_features.size(1)),
+            n_alternative_features=int(alt_features_tensor.size(1)),
+            alternative_features=alt_features_tensor,
             population_agents=selected_features,
         ),
     }
@@ -108,8 +117,8 @@ def _single_criteria_sushi_task(
     
     from grums.core.parameters import GRUMParameters
     init_params = GRUMParameters(
-        delta=np.zeros(m, dtype=float),
-        interaction=np.zeros((selected_features.shape[1], dataset.alternative_features.shape[1]), dtype=float)
+        delta=torch.zeros(m, device=device, dtype=torch.float64),
+        interaction=torch.zeros((selected_features.size(1), alt_features_tensor.size(1)), device=device, dtype=torch.float64)
     )
     
     engine = AdaptiveElicitationEngine(criterion=criterion, mcem_config=config)
@@ -124,8 +133,8 @@ def _single_criteria_sushi_task(
     )
     
     soc_tau = social_choice_kendall_tau(true_params.delta, result.final_params.delta)
-    mean_person = personalized_mean_kendall_tau(true_params, result.final_params, selected_features, dataset.alternative_features)
-    raw_person = raw_mean_kendall_tau(result.final_params, selected_features, dataset.alternative_features, selected_rankings)
+    mean_person = personalized_mean_kendall_tau(true_params, result.final_params, selected_features, alt_features_tensor)
+    raw_person = raw_mean_kendall_tau(result.final_params, selected_features, alt_features_tensor, selected_rankings)
     return {"social": soc_tau, "mean_person": mean_person, "raw_person": raw_person}
 
 def compare_criteria_sushi_choice(

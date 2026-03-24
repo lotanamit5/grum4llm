@@ -39,6 +39,7 @@ DEFAULTS = {
     "prior_precision": 1e-2,
     "tolerance": 1e-5,
     "random_seed": 0,
+    "metric": "social",
     "output_json": "",
     "quiet": False,
     "no_progress": False,
@@ -87,6 +88,7 @@ def main(argv: list[str] | None = None) -> None:
     parser.add_argument("--prior-precision", type=float, default=defaults["prior_precision"])
     parser.add_argument("--tolerance", type=float, default=defaults["tolerance"])
     parser.add_argument("--random-seed", type=int, default=defaults["random_seed"])
+    parser.add_argument("--metric", choices=["social", "mean_person", "raw_person"], default=defaults["metric"])
 
     parser.add_argument("--output-json", type=str, default=defaults["output_json"])
     parser.add_argument("--quiet", action="store_true", default=bool(defaults["quiet"]))
@@ -151,7 +153,7 @@ def main(argv: list[str] | None = None) -> None:
     timing["criteria_seconds"] = criteria_seconds
     payload["criteria"] = {args.criterion: score}
 
-    _log(log_enabled, f"Criteria phase finished in {criteria_seconds:.2f}s (score={score:.4f})")
+    _log(log_enabled, f"Criteria phase finished in {criteria_seconds:.2f}s (social_tau={score['social']:.4f})")
 
     total_seconds = perf_counter() - run_start
     timing["total_seconds"] = total_seconds

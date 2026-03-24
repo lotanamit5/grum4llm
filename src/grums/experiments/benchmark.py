@@ -2,13 +2,13 @@
 
 from __future__ import annotations
 
+import torch
+import numpy as np
 from concurrent.futures import ProcessPoolExecutor, as_completed
 from dataclasses import dataclass
 from typing import Callable
 
-import numpy as np
-
-from grums.contracts import AgentRecord, AlternativeRecord, RankingObservation
+from grums.contracts import AgentRecord, AlternativeRecord, RankingObservation, Observation
 from grums.core.parameters import GRUMParameters
 from grums.elicitation import (
     AdaptiveElicitationEngine,
@@ -27,6 +27,7 @@ from grums.experiments.synthetic_data import (
 from grums.inference import MCEMConfig, MCEMInference
 from grums.providers import OracleRankingProvider
 
+Tensor = torch.Tensor
 
 @dataclass(frozen=True)
 class AsymptoticPoint:
@@ -46,11 +47,14 @@ class ElicitationCurvePoint:
     raw_person_tau: float
 
 
-def _default_initial_params(dataset: SyntheticDataset) -> GRUMParameters:
-    k = dataset.agent_features.shape[1]
-    l = dataset.alternative_features.shape[1]
-    m = dataset.params_true.n_alternatives
-    return GRUMParameters(delta=np.zeros(m, dtype=float), interaction=np.zeros((k, l), dtype=float))
+def _default_initial_params(dataset: SyntheticDataset, device: torch.device) -> GRUMParameters:
+    k = int(dataset.agent_features.size(1))
+    l = int(dataset.alternative_features.size(1))
+    m = int(dataset.params_true.n_alternatives)
+    return GRUMParameters(
+        delta=torch.zeros(m, dtype=torch.float64, device=device), 
+        interaction=torch.zeros((k, l), dtype=torch.float64, device=device)
+    )
 
 
 def _dataset_builder(dataset: str):
@@ -64,47 +68,72 @@ def _dataset_builder(dataset: str):
 
 
 def _single_asymptotic_task(
-    dataset: str,
-    n: int,
+    dataset_name: str,
+    n_agents_to_obs: int,
     repeat_index: int,
     max_agents: int,
     seed: int,
     config: MCEMConfig,
 ) -> tuple[int, float, float, float]:
-    build_dataset = _dataset_builder(dataset)
+    build_dataset = _dataset_builder(dataset_name)
     data = build_dataset(n_agents=max_agents, seed=seed + repeat_index)
-    init = _default_initial_params(data)
+    device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+    
+    # Move data to Tensors
+    agent_features = data.agent_features.to(device)
+    alt_features = data.alternative_features.to(device)
+    true_params = GRUMParameters(
+        delta=data.params_true.delta.to(device),
+        interaction=data.params_true.interaction.to(device)
+    )
+    
+    init = _default_initial_params(data, device)
     inf = MCEMInference(config)
+    
+    obs_list = [
+        RankingObservation(agent_id=f"a{i}", ranking=data.rankings[i]) 
+        for i in range(n_agents_to_obs)
+    ]
+    
     fit = inf.fit_map(
         initial_params=init,
-        rankings=list(data.rankings[:n]),
-        agent_features=data.agent_features[:n],
-        alternative_features=data.alternative_features,
+        observations=obs_list,
+        agent_features=agent_features[:n_agents_to_obs],
+        alternative_features=alt_features,
     )
-    tau = social_choice_kendall_tau(data.params_true.delta, fit.params.delta)
-    mean_person_tau = personalized_mean_kendall_tau(data.params_true, fit.params, data.agent_features, data.alternative_features)
-    raw_person_tau = raw_mean_kendall_tau(fit.params, data.agent_features, data.alternative_features, list(data.rankings))
-    return n, tau, mean_person_tau, raw_person_tau
+    
+    tau = social_choice_kendall_tau(true_params.delta, fit.params.delta)
+    mean_person_tau = personalized_mean_kendall_tau(true_params, fit.params, agent_features, alt_features)
+    raw_person_tau = raw_mean_kendall_tau(fit.params, agent_features, alt_features, list(data.rankings[:n_agents_to_obs]))
+    return n_agents_to_obs, tau, mean_person_tau, raw_person_tau
 
 
 def _single_criteria_repeat_task(
-    dataset: str,
+    dataset_name: str,
     n_rounds: int,
     repeat_index: int,
     criterion_name: str,
     seed: int,
     config: MCEMConfig,
-) -> float:
-    build_dataset = _dataset_builder(dataset)
+) -> tuple[float, float, float]:
+    build_dataset = _dataset_builder(dataset_name)
     data = build_dataset(n_agents=max(n_rounds + 1, 30), seed=seed + repeat_index)
+    device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
     m = data.params_true.n_alternatives
 
+    agent_features = data.agent_features.to(device)
+    alt_features = data.alternative_features.to(device)
+    true_params = GRUMParameters(
+        delta=data.params_true.delta.to(device),
+        interaction=data.params_true.interaction.to(device)
+    )
+
     alternatives = [
-        AlternativeRecord(alternative_id=j, features=data.alternative_features[j]) for j in range(m)
+        AlternativeRecord(alternative_id=j, features=alt_features[j]) for j in range(m)
     ]
     agents = [
-        AgentRecord(agent_id=f"a{i}", features=data.agent_features[i])
-        for i in range(data.agent_features.shape[0])
+        AgentRecord(agent_id=f"a{i}", features=agent_features[i])
+        for i in range(agent_features.size(0))
     ]
     ranking_by_agent = {f"a{i}": data.rankings[i] for i in range(len(data.rankings))}
     provider = OracleRankingProvider(ranking_by_agent)
@@ -118,48 +147,55 @@ def _single_criteria_repeat_task(
         "d_opt": DOptimalityCriterion(),
         "e_opt": EOptimalityCriterion(),
         "social": SocialChoiceCriterion(n_alternatives=m),
-        "personalized": SocialChoiceCriterion(n_alternatives=m),
     }
 
     criterion = criteria[criterion_name]
     engine = AdaptiveElicitationEngine(criterion=criterion, mcem_config=config)
+    
+    init = _default_initial_params(data, device)
+    
     result = engine.run(
         provider=provider,
-        initial_params=_default_initial_params(data),
+        initial_params=init,
         initial_observations=[seed_obs],
         observed_agents=observed_agents,
         candidate_agents=candidates,
         alternatives=alternatives,
         n_rounds=n_rounds,
     )
-    soc_tau = social_choice_kendall_tau(data.params_true.delta, result.final_params.delta)
-    mean_tau = personalized_mean_kendall_tau(data.params_true, result.final_params, data.agent_features, data.alternative_features)
-    raw_tau = raw_mean_kendall_tau(result.final_params, data.agent_features, data.alternative_features, list(data.rankings))
+    soc_tau = social_choice_kendall_tau(true_params.delta, result.final_params.delta)
+    mean_tau = personalized_mean_kendall_tau(true_params, result.final_params, agent_features, alt_features)
+    raw_tau = raw_mean_kendall_tau(result.final_params, agent_features, alt_features, list(data.rankings))
     return soc_tau, mean_tau, raw_tau
 
 
 def run_social_choice_elicitation_curve(
-    dataset: str,
+    dataset_name: str,
     n_rounds: int,
     criterion_name: str,
     seed: int,
     mcem_config: MCEMConfig | None = None,
 ) -> list[ElicitationCurvePoint]:
-    """Single-seed adaptive elicitation with Kendall τ after each MAP state (O(n) vs. O(n²) resimulation).
-
-    Observation counts run from 1 (seed only) through 1 + n_rounds after the terminal MAP refit.
-    """
+    """Single-seed adaptive elicitation with Kendall τ after each MAP state."""
 
     config = mcem_config or MCEMConfig(n_iterations=6, n_gibbs_samples=25, n_gibbs_burnin=12)
-    build_dataset = _dataset_builder(dataset)
+    build_dataset = _dataset_builder(dataset_name)
     data = build_dataset(n_agents=max(n_rounds + 1, 30), seed=seed)
+    device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
     m = data.params_true.n_alternatives
+    
+    agent_features = data.agent_features.to(device)
+    alt_features = data.alternative_features.to(device)
+    true_params = GRUMParameters(
+        delta=data.params_true.delta.to(device),
+        interaction=data.params_true.interaction.to(device)
+    )
 
     alternatives = [
-        AlternativeRecord(alternative_id=j, features=data.alternative_features[j]) for j in range(m)
+        AlternativeRecord(alternative_id=j, features=alt_features[j]) for j in range(m)
     ]
     agents = [
-        AgentRecord(agent_id=f"a{i}", features=data.agent_features[i]) for i in range(data.agent_features.shape[0])
+        AgentRecord(agent_id=f"a{i}", features=agent_features[i]) for i in range(agent_features.size(0))
     ]
     ranking_by_agent = {f"a{i}": data.rankings[i] for i in range(len(data.rankings))}
     provider = OracleRankingProvider(ranking_by_agent)
@@ -173,23 +209,24 @@ def run_social_choice_elicitation_curve(
         "d_opt": DOptimalityCriterion(),
         "e_opt": EOptimalityCriterion(),
         "social": SocialChoiceCriterion(n_alternatives=m),
-        "personalized": SocialChoiceCriterion(n_alternatives=m),
     }
 
     criterion = criteria[criterion_name]
     engine = AdaptiveElicitationEngine(criterion=criterion, mcem_config=config)
+    
+    init = _default_initial_params(data, device)
 
     tau_by_n: dict[int, tuple[float, float, float]] = {}
 
     def _on_after_map(n_obs: int, params: GRUMParameters) -> None:
-        soc_tau = social_choice_kendall_tau(data.params_true.delta, params.delta)
-        mean_tau = personalized_mean_kendall_tau(data.params_true, params, data.agent_features, data.alternative_features)
-        raw_tau = raw_mean_kendall_tau(params, data.agent_features, data.alternative_features, list(data.rankings))
+        soc_tau = social_choice_kendall_tau(true_params.delta, params.delta)
+        mean_tau = personalized_mean_kendall_tau(true_params, params, agent_features, alt_features)
+        raw_tau = raw_mean_kendall_tau(params, agent_features, alt_features, list(data.rankings))
         tau_by_n[n_obs] = (soc_tau, mean_tau, raw_tau)
 
     _ = engine.run(
         provider=provider,
-        initial_params=_default_initial_params(data),
+        initial_params=init,
         initial_observations=[seed_obs],
         observed_agents=observed_agents,
         candidate_agents=candidates,
@@ -206,43 +243,26 @@ def run_social_choice_elicitation_curve(
 
 def run_asymptotic_social_choice(
     agent_counts: list[int],
-    dataset: str = "dataset2",
+    dataset_name: str = "dataset2",
     repeats: int = 3,
     seed: int = 0,
     mcem_config: MCEMConfig | None = None,
     n_jobs: int = 1,
     progress_update: Callable[[int], None] | None = None,
 ) -> list[AsymptoticPoint]:
-    """Run social-choice recovery vs number of observed agents.
-
-    Dataset can be `dataset1` or `dataset2`.
-    """
+    """Run social-choice recovery vs number of observed agents."""
 
     config = mcem_config or MCEMConfig(n_iterations=8, n_gibbs_samples=30, n_gibbs_burnin=15)
-    _dataset_builder(dataset)
+    _dataset_builder(dataset_name)
     if n_jobs <= 0:
         raise ValueError("n_jobs must be positive")
     points: list[AsymptoticPoint] = []
 
     if n_jobs == 1:
-        build_dataset = _dataset_builder(dataset)
         for n in agent_counts:
             taus: list[tuple[float, float, float]] = []
             for r in range(repeats):
-                data = build_dataset(n_agents=max(agent_counts), seed=seed + r)
-                init = _default_initial_params(data)
-                inf = MCEMInference(config)
-
-                fit = inf.fit_map(
-                    initial_params=init,
-                    rankings=list(data.rankings[:n]),
-                    agent_features=data.agent_features[:n],
-                    alternative_features=data.alternative_features,
-                )
-                
-                t_soc = social_choice_kendall_tau(data.params_true.delta, fit.params.delta)
-                t_mean = personalized_mean_kendall_tau(data.params_true, fit.params, data.agent_features, data.alternative_features)
-                t_raw = raw_mean_kendall_tau(fit.params, data.agent_features, data.alternative_features, list(data.rankings))
+                n_out, t_soc, t_mean, t_raw = _single_asymptotic_task(dataset_name, n, r, max(agent_counts), seed, config)
                 taus.append((t_soc, t_mean, t_raw))
                 if progress_update is not None:
                     progress_update(1)
@@ -262,7 +282,7 @@ def run_asymptotic_social_choice(
     taus_by_n: dict[int, list[tuple[float, float, float]]] = {n: [] for n in agent_counts}
     with ProcessPoolExecutor(max_workers=n_jobs) as ex:
         futures = [
-            ex.submit(_single_asymptotic_task, dataset, n, r, max_agents, seed, config)
+            ex.submit(_single_asymptotic_task, dataset_name, n, r, max_agents, seed, config)
             for n in agent_counts
             for r in range(repeats)
         ]
@@ -287,7 +307,7 @@ def run_asymptotic_social_choice(
 
 
 def compare_criteria_social_choice(
-    dataset: str = "dataset2",
+    dataset_name: str = "dataset2",
     n_rounds: int = 20,
     repeats: int = 3,
     criterion_name: str = "social",
@@ -295,81 +315,32 @@ def compare_criteria_social_choice(
     mcem_config: MCEMConfig | None = None,
     n_jobs: int = 1,
     progress_update: Callable[[int], None] | None = None,
-) -> float:
-    """Compare social-choice quality after adaptive elicitation for a specific criterion.
-
-    Returns mean Kendall tau across repeats for the criterion.
-    """
+) -> dict[str, float]:
+    """Compare social-choice quality after adaptive elicitation for a specific criterion."""
 
     config = mcem_config or MCEMConfig(n_iterations=6, n_gibbs_samples=25, n_gibbs_burnin=12)
-    _dataset_builder(dataset)
+    _dataset_builder(dataset_name)
     if n_jobs <= 0:
         raise ValueError("n_jobs must be positive")
 
     out: list[tuple[float, float, float]] = []
 
     if n_jobs == 1:
-        build_dataset = _dataset_builder(dataset)
         for r in range(repeats):
-            data = build_dataset(n_agents=max(n_rounds + 1, 30), seed=seed + r)
-            m = data.params_true.n_alternatives
-
-            alternatives = [
-                AlternativeRecord(alternative_id=j, features=data.alternative_features[j]) for j in range(m)
-            ]
-            agents = [
-                AgentRecord(agent_id=f"a{i}", features=data.agent_features[i])
-                for i in range(data.agent_features.shape[0])
-            ]
-            ranking_by_agent = {f"a{i}": data.rankings[i] for i in range(len(data.rankings))}
-            provider = OracleRankingProvider(ranking_by_agent)
-
-            seed_obs = RankingObservation(agent_id="a0", ranking=data.rankings[0])
-            observed_agents = [agents[0]]
-            candidates = agents[1:]
-
-            criteria = {
-                "random": RandomCriterion(seed + 1000 + r),
-                "d_opt": DOptimalityCriterion(),
-                "e_opt": EOptimalityCriterion(),
-                "social": SocialChoiceCriterion(n_alternatives=m),
-                "personalized": SocialChoiceCriterion(n_alternatives=m),
-            }
-
-            criterion = criteria[criterion_name]
-            engine = AdaptiveElicitationEngine(criterion=criterion, mcem_config=config)
-            result = engine.run(
-                provider=provider,
-                initial_params=_default_initial_params(data),
-                initial_observations=[seed_obs],
-                observed_agents=observed_agents,
-                candidate_agents=candidates,
-                alternatives=alternatives,
-                n_rounds=n_rounds,
-            )
-            soc_tau = social_choice_kendall_tau(data.params_true.delta, result.final_params.delta)
-            mean_tau = personalized_mean_kendall_tau(data.params_true, result.final_params, data.agent_features, data.alternative_features)
-            raw_tau = raw_mean_kendall_tau(result.final_params, data.agent_features, data.alternative_features, list(data.rankings))
-            out.append((soc_tau, mean_tau, raw_tau))
+            val = _single_criteria_repeat_task(dataset_name, n_rounds, r, criterion_name, seed, config)
+            out.append(val)
             if progress_update is not None:
                 progress_update(n_rounds)
-
-        return {
-            "social": float(np.mean([x[0] for x in out])),
-            "mean_person": float(np.mean([x[1] for x in out])),
-            "raw_person": float(np.mean([x[2] for x in out])),
-        }
-
-    with ProcessPoolExecutor(max_workers=n_jobs) as ex:
-        futures = [
-            ex.submit(_single_criteria_repeat_task, dataset, n_rounds, r, criterion_name, seed, config)
-            for r in range(repeats)
-        ]
-        for fut in as_completed(futures):
-            rep_score = fut.result()
-            out.append(rep_score)
-            if progress_update is not None:
-                progress_update(n_rounds)
+    else:
+        with ProcessPoolExecutor(max_workers=n_jobs) as ex:
+            futures = [
+                ex.submit(_single_criteria_repeat_task, dataset_name, n_rounds, r, criterion_name, seed, config)
+                for r in range(repeats)
+            ]
+            for fut in as_completed(futures):
+                out.append(fut.result())
+                if progress_update is not None:
+                    progress_update(n_rounds)
 
     return {
         "social": float(np.mean([x[0] for x in out])),

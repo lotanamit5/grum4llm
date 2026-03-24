@@ -5,10 +5,17 @@ from __future__ import annotations
 from collections.abc import Callable
 from dataclasses import dataclass
 
-import numpy as np
-from numpy.typing import NDArray
+import torch
 
-from grums.contracts import AgentRecord, AlternativeRecord, PreferenceProvider, RankingObservation
+from grums.contracts import (
+    AgentRecord, 
+    AlternativeRecord, 
+    Observation,
+    PreferenceProvider, 
+    RankingObservation,
+    PairwiseObservation,
+    compile_constraint_graph
+)
 from grums.core.parameters import GRUMParameters
 from grums.elicitation.criteria import DesignCriterion
 from grums.inference import (
@@ -19,7 +26,7 @@ from grums.inference import (
     posterior_precision,
 )
 
-FloatArray = NDArray[np.float64]
+Tensor = torch.Tensor
 
 
 @dataclass(frozen=True)
@@ -33,7 +40,7 @@ class ElicitationStep:
 @dataclass(frozen=True)
 class AdaptiveElicitationResult:
     final_params: GRUMParameters
-    observations: tuple[RankingObservation, ...]
+    observations: tuple[Observation, ...]
     history: tuple[ElicitationStep, ...]
 
 
@@ -48,12 +55,13 @@ class AdaptiveElicitationEngine:
         self.criterion = criterion
         self.mcem_config = mcem_config or MCEMConfig()
         self.inference = MCEMInference(self.mcem_config)
+        self.device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
     def run(
         self,
         provider: PreferenceProvider,
         initial_params: GRUMParameters,
-        initial_observations: list[RankingObservation],
+        initial_observations: list[Observation],
         observed_agents: list[AgentRecord],
         candidate_agents: list[AgentRecord],
         alternatives: list[AlternativeRecord],
@@ -70,7 +78,7 @@ class AdaptiveElicitationEngine:
             raise ValueError("n_rounds must be non-negative")
 
         alternatives_sorted = sorted(alternatives, key=lambda a: a.alternative_id)
-        alternative_features = np.vstack([a.features for a in alternatives_sorted])
+        alternative_features = torch.vstack([a.features for a in alternatives_sorted]).to(self.device).to(torch.float64)
 
         observations = list(initial_observations)
         queried_ids = {o.agent_id for o in observations}
@@ -79,22 +87,24 @@ class AdaptiveElicitationEngine:
         observed_lookup = {a.agent_id: a for a in observed_agents}
         candidate_lookup = {a.agent_id: a for a in candidate_agents}
 
-        params = initial_params
+        params = GRUMParameters(
+            delta=initial_params.delta.to(self.device).to(torch.float64),
+            interaction=initial_params.interaction.to(self.device).to(torch.float64)
+        )
 
         for t in range(1, n_rounds + 1):
             aligned_agents = [observed_lookup[o.agent_id] for o in observations]
-            agent_features = np.vstack([a.features for a in aligned_agents])
-            rankings = [o.ranking for o in observations]
+            agent_features = torch.vstack([a.features for a in aligned_agents]).to(self.device).to(torch.float64)
 
             fit = self.inference.fit_map(
                 initial_params=params,
-                rankings=rankings,
+                observations=observations,
                 agent_features=agent_features,
                 alternative_features=alternative_features,
             )
             params = fit.params
 
-            if on_after_map is not None and observations:
+            if on_after_map is not None:
                 on_after_map(len(observations), params)
 
             obs_fisher = observed_fisher_information(
@@ -104,7 +114,7 @@ class AdaptiveElicitationEngine:
                 sigma=self.mcem_config.sigma,
             )
             base_precision = posterior_precision(obs_fisher, self.mcem_config.prior_precision)
-            theta_vec = np.concatenate([params.delta, params.interaction.reshape(-1)])
+            theta_vec = torch.cat([params.delta, params.interaction.reshape(-1)])
 
             best_agent: AgentRecord | None = None
             best_score = float("-inf")
@@ -112,8 +122,10 @@ class AdaptiveElicitationEngine:
             for candidate in candidate_agents:
                 if candidate.agent_id in queried_ids:
                     continue
+                
+                cand_feat = candidate.features.to(self.device).to(torch.float64)
                 cand_info = candidate_fisher_information(
-                    candidate.features,
+                    cand_feat,
                     alternative_features,
                     n_alternatives=params.n_alternatives,
                     sigma=self.mcem_config.sigma,
@@ -126,6 +138,8 @@ class AdaptiveElicitationEngine:
             if best_agent is None:
                 break
 
+            # TODO: Add logic to decide whether to query full or pairwise.
+            # For now, default to full ranking to maintain legacy behavior for Figure repro.
             new_obs = provider.query_full_ranking(best_agent, alternatives_sorted)
             observations.append(new_obs)
             queried_ids.add(best_agent.agent_id)
@@ -140,15 +154,14 @@ class AdaptiveElicitationEngine:
                 )
             )
 
-        # MAP on full D: in-loop fit runs before each new query, so the last elicited
-        # ranking is only incorporated here (and n_rounds=0 still gets a MAP on seed data).
+        # MAP on full D
         if observations:
             aligned_agents = [observed_lookup[o.agent_id] for o in observations]
-            agent_features = np.vstack([a.features for a in aligned_agents])
-            rankings = [o.ranking for o in observations]
+            agent_features = torch.vstack([a.features for a in aligned_agents]).to(self.device).to(torch.float64)
+            
             final_fit = self.inference.fit_map(
                 initial_params=params,
-                rankings=rankings,
+                observations=observations,
                 agent_features=agent_features,
                 alternative_features=alternative_features,
             )

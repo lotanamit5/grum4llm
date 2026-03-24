@@ -1,4 +1,4 @@
-import numpy as np
+import torch
 
 from grums.experiments.synthetic_data import make_dataset_1, make_dataset_2
 
@@ -18,4 +18,4 @@ def test_dataset_2_has_lower_noise_than_dataset_1() -> None:
     ds2 = make_dataset_2(seed=2)
 
     assert ds2.sigma_noise < ds1.sigma_noise
-    assert np.mean(np.abs(ds2.params_true.delta)) > np.mean(np.abs(ds1.params_true.delta))
+    assert torch.mean(torch.abs(ds2.params_true.delta)) > torch.mean(torch.abs(ds1.params_true.delta))

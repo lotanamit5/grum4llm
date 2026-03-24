@@ -5,44 +5,46 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import Protocol
 
-import numpy as np
-from numpy.typing import NDArray
+import torch
 
-FloatArray = NDArray[np.float64]
+Tensor = torch.Tensor
 
 
 class DesignCriterion(Protocol):
-    def score(self, prior_plus_candidate_info: FloatArray, theta_vector: FloatArray) -> float:
+    def score(self, prior_plus_candidate_info: Tensor, theta_vector: Tensor) -> float:
         """Return scalar score where larger values are better."""
+
 
 class RandomCriterion:
     def __init__(self, seed: int) -> None:
-        self.rng = np.random.default_rng(seed)
+        self.generator = torch.Generator()
+        self.generator.manual_seed(seed)
 
-    def score(self, prior_plus_candidate_info: np.ndarray, theta_vector: np.ndarray) -> float:
+    def score(self, prior_plus_candidate_info: Tensor, theta_vector: Tensor) -> float:
         _ = prior_plus_candidate_info
         _ = theta_vector
-        return float(self.rng.random())
+        return float(torch.rand(1, generator=self.generator).item())
+
 
 @dataclass(frozen=True)
 class DOptimalityCriterion:
     jitter: float = 1e-9
 
-    def score(self, prior_plus_candidate_info: FloatArray, theta_vector: FloatArray) -> float:
+    def score(self, prior_plus_candidate_info: Tensor, theta_vector: Tensor) -> float:
         _ = theta_vector
-        matrix = prior_plus_candidate_info + (self.jitter * np.eye(prior_plus_candidate_info.shape[0]))
-        sign, logdet = np.linalg.slogdet(matrix)
-        if sign <= 0:
+        matrix = prior_plus_candidate_info + (self.jitter * torch.eye(prior_plus_candidate_info.size(0), device=prior_plus_candidate_info.device))
+        logdet = torch.logdet(matrix)
+        if not torch.isfinite(logdet):
             return float("-inf")
-        return float(logdet)
+        return float(logdet.item())
 
 
 @dataclass(frozen=True)
 class EOptimalityCriterion:
-    def score(self, prior_plus_candidate_info: FloatArray, theta_vector: FloatArray) -> float:
+    def score(self, prior_plus_candidate_info: Tensor, theta_vector: Tensor) -> float:
         _ = theta_vector
-        eigvals = np.linalg.eigvalsh(prior_plus_candidate_info)
-        return float(eigvals.min())
+        eigvals = torch.linalg.eigvalsh(prior_plus_candidate_info)
+        return float(eigvals.min().item())
 
 
 @dataclass(frozen=True)
@@ -50,29 +52,28 @@ class SocialChoiceCriterion:
     n_alternatives: int
     min_variance: float = 1e-12
 
-    def score(self, prior_plus_candidate_info: FloatArray, theta_vector: FloatArray) -> float:
-        if theta_vector.ndim != 1:
+    def score(self, prior_plus_candidate_info: Tensor, theta_vector: Tensor) -> float:
+        if theta_vector.dim() != 1:
             raise ValueError("theta_vector must be 1D")
-        if theta_vector.shape[0] < self.n_alternatives:
+        if theta_vector.size(0) < self.n_alternatives:
             raise ValueError("theta_vector shorter than number of alternatives")
 
         delta = theta_vector[: self.n_alternatives]
-        covariance = np.linalg.inv(prior_plus_candidate_info)
+        covariance = torch.linalg.inv(prior_plus_candidate_info)
 
-        min_certainty = float("inf")
-        for j1 in range(self.n_alternatives):
-            for j2 in range(j1 + 1, self.n_alternatives):
-                diff_mean = abs(delta[j1] - delta[j2])
-                diff_var = (
-                    covariance[j1, j1]
-                    + covariance[j2, j2]
-                    - 2.0 * covariance[j1, j2]
-                )
-                diff_std = np.sqrt(max(diff_var, self.min_variance))
-                certainty = diff_mean / diff_std
-                min_certainty = min(min_certainty, certainty)
-
-        return float(min_certainty)
+        # Vectorized pairwise certainty calculation
+        j1_idx, j2_idx = torch.triu_indices(self.n_alternatives, self.n_alternatives, offset=1)
+        
+        diff_mean = torch.abs(delta[j1_idx] - delta[j2_idx])
+        diff_var = (
+            covariance[j1_idx, j1_idx]
+            + covariance[j2_idx, j2_idx]
+            - 2.0 * covariance[j1_idx, j2_idx]
+        )
+        diff_std = torch.sqrt(torch.clamp(diff_var, min=self.min_variance))
+        certainty = diff_mean / diff_std
+        
+        return float(certainty.min().item())
 
 
 @dataclass(frozen=True)
@@ -82,50 +83,55 @@ class PersonalizedChoiceCriterion:
     n_alternatives: int
     n_agent_features: int
     n_alternative_features: int
-    alternative_features: FloatArray
-    population_agents: FloatArray
+    alternative_features: Tensor
+    population_agents: Tensor
     min_variance: float = 1e-12
 
-    def score(self, prior_plus_candidate_info: FloatArray, theta_vector: FloatArray) -> float:
-        if theta_vector.ndim != 1:
+    def score(self, prior_plus_candidate_info: Tensor, theta_vector: Tensor) -> float:
+        if theta_vector.dim() != 1:
             raise ValueError("theta_vector must be 1D")
         if self.alternative_features.shape != (self.n_alternatives, self.n_alternative_features):
             raise ValueError("alternative_features has incompatible shape")
-        if self.population_agents.ndim != 2 or self.population_agents.shape[1] != self.n_agent_features:
+        if self.population_agents.dim() != 2 or self.population_agents.size(1) != self.n_agent_features:
             raise ValueError("population_agents has incompatible shape")
 
         expected_len = self.n_alternatives + (self.n_agent_features * self.n_alternative_features)
-        if theta_vector.shape[0] < expected_len:
+        if theta_vector.size(0) < expected_len:
             raise ValueError("theta_vector is shorter than expected parameter size")
 
-        delta = theta_vector[: self.n_alternatives]
+        delta = theta_vector[: self.n_alternatives].to(torch.float64)
         b_vec = theta_vector[
             self.n_alternatives : self.n_alternatives + (self.n_agent_features * self.n_alternative_features)
-        ]
-        b = b_vec.reshape(self.n_agent_features, self.n_alternative_features)
-        covariance = np.linalg.inv(prior_plus_candidate_info)
+        ].to(torch.float64)
+        b = b_vec.view(self.n_agent_features, self.n_alternative_features)
+        covariance = torch.linalg.inv(prior_plus_candidate_info.to(torch.float64))
 
+        j1_idx, j2_idx = torch.triu_indices(self.n_alternatives, self.n_alternatives, offset=1)
+        
+        z_diff = self.alternative_features[j1_idx].to(torch.float64) - self.alternative_features[j2_idx].to(torch.float64)
+        delta_diff = delta[j1_idx] - delta[j2_idx]
+        
         per_agent_scores: list[float] = []
         for x in self.population_agents:
-            min_certainty = float("inf")
-            for j1 in range(self.n_alternatives):
-                for j2 in range(j1 + 1, self.n_alternatives):
-                    z1 = self.alternative_features[j1]
-                    z2 = self.alternative_features[j2]
+            x_f64 = x.to(torch.float64)
+            # x is (K,), b is (K, L), z_diff is (n_pairs, L)
+            # mu_diff = delta_diff + x @ b @ z_diff.T
+            mu_diff = delta_diff + (x_f64 @ b @ z_diff.T)
+            diff_mean = torch.abs(mu_diff)
+            
+            # kronecker product for gradients
+            grad_int = (x_f64.view(1, -1, 1) * z_diff.view(-1, 1, self.n_alternative_features)).reshape(len(j1_idx), -1)
+            
+            # Full gradient for delta differences
+            grad_delta = torch.zeros((len(j1_idx), self.n_alternatives), device=x.device, dtype=torch.float64)
+            grad_delta[torch.arange(len(j1_idx)), j1_idx] = 1.0
+            grad_delta[torch.arange(len(j1_idx)), j2_idx] = -1.0
+            
+            grad = torch.cat([grad_delta, grad_int], dim=1) # (n_pairs, total_params)
+            
+            diff_var = torch.diag(grad @ covariance @ grad.T)
+            diff_std = torch.sqrt(torch.clamp(diff_var, min=self.min_variance))
+            certainty = diff_mean / diff_std
+            per_agent_scores.append(certainty.min().item())
 
-                    mu1 = float(delta[j1] + x @ b @ z1)
-                    mu2 = float(delta[j2] + x @ b @ z2)
-                    diff_mean = abs(mu1 - mu2)
-
-                    grad = np.zeros(expected_len, dtype=float)
-                    grad[j1] = 1.0
-                    grad[j2] = -1.0
-                    grad[self.n_alternatives :] = np.kron(x, z1 - z2)
-
-                    diff_var = float(grad @ covariance @ grad)
-                    diff_std = np.sqrt(max(diff_var, self.min_variance))
-                    certainty = diff_mean / diff_std
-                    min_certainty = min(min_certainty, certainty)
-            per_agent_scores.append(min_certainty)
-
-        return float(np.mean(per_agent_scores))
+        return float(torch.tensor(per_agent_scores).mean().item())

@@ -1,17 +1,17 @@
-"""Monte Carlo EM inference for Normal-family GRUM."""
+"""Monte Carlo EM inference for Normal-family GRUM with Pairwise DAG Constraints."""
 
 from __future__ import annotations
 
+import math
 from dataclasses import dataclass
 
-import numpy as np
-from numpy.typing import NDArray
-from scipy.stats import truncnorm
+import torch
 
+from grums.contracts import Observation, compile_constraint_graph
 from grums.core.model_math import compute_mean_utilities
 from grums.core.parameters import GRUMParameters
 
-FloatArray = NDArray[np.float64]
+Tensor = torch.Tensor
 
 
 @dataclass(frozen=True)
@@ -34,36 +34,70 @@ class MCEMResult:
 
 
 class MCEMInference:
-    """Algorithm-3 style MC-EM for Normal utility noise.
-
-    This implementation prioritizes clarity and reproducibility for the baseline path.
-    """
+    """Algorithm-3 style MC-EM for Normal utility noise utilizing PyTorch Graph constraints."""
 
     def __init__(self, config: MCEMConfig | None = None) -> None:
         self.config = config or MCEMConfig()
-        if (not np.isfinite(self.config.sigma)) or self.config.sigma <= 0.0:
+        if not math.isfinite(self.config.sigma) or self.config.sigma <= 0.0:
             raise ValueError("sigma must be a finite positive value")
-        self._rng = np.random.default_rng(self.config.random_seed)
+        
+        self.device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+
+    def _compile_adjacencies(
+        self,
+        observations: list[Observation],
+        n_alternatives: int,
+    ) -> tuple[Tensor, Tensor]:
+        """Compile pairwise directed graphs into boolean adjacency arrays matching parallel operations."""
+        n_agents = len(observations)
+        adj_upper = torch.zeros((n_agents, n_alternatives, n_alternatives), dtype=torch.bool, device=self.device)
+        adj_lower = torch.zeros((n_agents, n_alternatives, n_alternatives), dtype=torch.bool, device=self.device)
+        
+        graph = compile_constraint_graph(observations)
+        for i, obs in enumerate(observations):
+            edges = graph.get(obs.agent_id, [])
+            for winner, loser in edges:
+                adj_lower[i, winner, loser] = True # loser is a lower bound for winner
+                adj_upper[i, loser, winner] = True # winner is an upper bound for loser
+                
+        return adj_upper, adj_lower
 
     def fit_map(
         self,
         initial_params: GRUMParameters,
-        rankings: list[tuple[int, ...]],
-        agent_features: FloatArray,
-        alternative_features: FloatArray,
+        observations: list[Observation],
+        agent_features: Tensor,
+        alternative_features: Tensor,
     ) -> MCEMResult:
-        params = initial_params
+        params = GRUMParameters(
+            delta=initial_params.delta.to(self.device),
+            interaction=initial_params.interaction.to(self.device)
+        )
+        agent_features = agent_features.to(self.device)
+        alternative_features = alternative_features.to(self.device)
+        
+        n_agents = len(observations)
+        if n_agents != agent_features.size(0):
+            raise ValueError("Mismatch between agents count and features")
+            
+        n_alts = int(params.n_alternatives)
+        
+        # Parallel constraints matrix mapping bounds dynamically
+        adj_upper, adj_lower = self._compile_adjacencies(observations, n_alts)
+        
         objective_trace: list[float] = []
 
+        torch.manual_seed(self.config.random_seed)
+        
         converged = False
         for step in range(1, self.config.n_iterations + 1):
-            s = self._e_step(params, rankings, agent_features, alternative_features)
+            s = self._e_step(params, adj_upper, adj_lower, agent_features, alternative_features)
             new_params = self._m_step(s, params, agent_features, alternative_features)
 
             q_val = self._q_objective(s, new_params, agent_features, alternative_features)
             objective_trace.append(float(q_val))
 
-            param_diff = np.linalg.norm(new_params.delta - params.delta) + np.linalg.norm(
+            param_diff = torch.linalg.norm(new_params.delta - params.delta) + torch.linalg.norm(
                 new_params.interaction - params.interaction
             )
             params = new_params
@@ -87,119 +121,112 @@ class MCEMInference:
     def _e_step(
         self,
         params: GRUMParameters,
-        rankings: list[tuple[int, ...]],
-        agent_features: FloatArray,
-        alternative_features: FloatArray,
-    ) -> FloatArray:
+        adj_upper: Tensor,
+        adj_lower: Tensor,
+        agent_features: Tensor,
+        alternative_features: Tensor,
+    ) -> Tensor:
+        
         mu = compute_mean_utilities(params, agent_features, alternative_features)
-        n_agents, n_alts = mu.shape
-        out = np.zeros((n_agents, n_alts), dtype=float)
-
-        for i in range(n_agents):
-            ranking = rankings[i]
-            if len(ranking) != n_alts:
-                raise ValueError("this baseline E-step expects full rankings")
-            samples = self._gibbs_samples_for_agent(mu[i], ranking)
-            out[i] = samples.mean(axis=0)
-
-        return out
-
-    def _gibbs_samples_for_agent(self, mean_vec: FloatArray, ranking: tuple[int, ...]) -> FloatArray:
-        m = len(ranking)
-        sigma = float(self.config.sigma)
-
-        ranked_means = [float(mean_vec[a]) for a in ranking]
-        for idx in range(1, m):
-            if ranked_means[idx] >= ranked_means[idx - 1]:
-                ranked_means[idx] = ranked_means[idx - 1] - 1e-3
-
-        current = np.zeros(m, dtype=float)
-        for pos, alt in enumerate(ranking):
-            current[alt] = ranked_means[pos]
-
-        collected: list[np.ndarray] = []
+        n_agents, m = mu.shape
+        sigma = self.config.sigma
+        
+        current_U = mu.clone()
+        sqrt2 = math.sqrt(2.0)
+        
+        collected_sums = torch.zeros_like(current_U)
         total = self.config.n_gibbs_burnin + self.config.n_gibbs_samples
-
+        
         for t in range(total):
-            for pos, alt in enumerate(ranking):
-                upper = np.inf if pos == 0 else current[ranking[pos - 1]]
-                lower = -np.inf if pos == m - 1 else current[ranking[pos + 1]]
-                mean = float(mean_vec[alt])
-                if not np.isfinite(mean):
-                    mean = 0.0
-
-                # Guard against numeric degeneracy in long runs (NaNs/inverted bounds).
-                if not np.isfinite(lower):
-                    lower = -np.inf
-                if not np.isfinite(upper):
-                    upper = np.inf
-                if lower >= upper:
-                    lower = mean - 10.0 * sigma
-                    upper = mean + 10.0 * sigma
-
-                a = (lower - mean) / sigma
-                b = (upper - mean) / sigma
-
-                try:
-                    sample = truncnorm.rvs(a, b, loc=mean, scale=sigma, random_state=self._rng)
-                except ValueError:
-                    sample = mean
-                    if np.isfinite(lower):
-                        sample = max(sample, lower)
-                    if np.isfinite(upper):
-                        sample = min(sample, upper)
-
-                current[alt] = float(sample)
-
+            for j in range(m):
+                u_upper = current_U.clone()
+                u_upper[~adj_upper[:, j, :]] = float('inf')
+                upper_bound, _ = u_upper.min(dim=1)
+                
+                u_lower = current_U.clone()
+                u_lower[~adj_lower[:, j, :]] = float('-inf')
+                lower_bound, _ = u_lower.max(dim=1)
+                
+                # numerical safety evaluating divergent bounds
+                invalid = lower_bound >= upper_bound
+                lower_bound[invalid] = mu[invalid, j] - 10.0 * sigma
+                upper_bound[invalid] = mu[invalid, j] + 10.0 * sigma
+                
+                alpha = (lower_bound - mu[:, j]) / sigma
+                beta = (upper_bound - mu[:, j]) / sigma
+                
+                alpha = torch.nan_to_num(alpha, nan=-10.0, posinf=-10.0, neginf=-10.0)
+                beta = torch.nan_to_num(beta, nan=10.0, posinf=10.0, neginf=10.0)
+                
+                p_a = 0.5 * (1.0 + torch.erf(alpha / sqrt2))
+                p_b = 0.5 * (1.0 + torch.erf(beta / sqrt2))
+                
+                p = torch.rand(n_agents, device=self.device) * (p_b - p_a) + p_a
+                
+                # Safety clamp preventing NaNs
+                p = torch.clamp(p, 1e-7, 1.0 - 1e-7)
+                
+                sample = mu[:, j] + sigma * sqrt2 * torch.erfinv(2.0 * p - 1.0)
+                
+                sample = torch.max(sample, lower_bound + 1e-5)
+                sample = torch.min(sample, upper_bound - 1e-5)
+                
+                current_U[:, j] = sample
+                
             if t >= self.config.n_gibbs_burnin:
-                collected.append(current.copy())
-
-        return np.vstack(collected)
+                collected_sums += current_U
+                
+        return collected_sums / self.config.n_gibbs_samples
 
     def _m_step(
         self,
-        s_matrix: FloatArray,
+        s_matrix: Tensor,
         prev_params: GRUMParameters,
-        agent_features: FloatArray,
-        alternative_features: FloatArray,
+        agent_features: Tensor,
+        alternative_features: Tensor,
     ) -> GRUMParameters:
         sigma2 = self.config.sigma**2
         lam = self.config.prior_precision
 
         n_agents, n_alts = s_matrix.shape
-        k = agent_features.shape[1]
-        l = alternative_features.shape[1]
+        k = agent_features.size(1)
+        l = alternative_features.size(1)
 
         xbzt = agent_features @ prev_params.interaction @ alternative_features.T
-        delta = (s_matrix - xbzt).sum(axis=0) / (n_agents + lam * sigma2)
+        delta = (s_matrix - xbzt).sum(dim=0) / (n_agents + lam * sigma2)
 
-        y = (s_matrix - delta.reshape(1, n_alts)).reshape(-1)
-        rows: list[np.ndarray] = []
+        y = (s_matrix - delta.view(1, n_alts)).reshape(-1)
+        
+        # Kronecker products matrix evaluation natively
+        # A bit memory hungry but incredibly fast over GPU
+        
+        rows = []
         for x in agent_features:
             for z in alternative_features:
-                rows.append(np.kron(x, z))
-        design = np.vstack(rows)
+                rows.append(torch.kron(x, z).unsqueeze(0))
+        design = torch.cat(rows, dim=0)
 
-        ridge = lam * sigma2 * np.eye(k * l)
+        ridge = lam * sigma2 * torch.eye(k * l, device=self.device)
         lhs = design.T @ design + ridge
         rhs = design.T @ y
-        b_vec = np.linalg.solve(lhs, rhs)
-        b_matrix = b_vec.reshape(k, l)
+        
+        b_vec = torch.linalg.solve(lhs, rhs)
+        b_matrix = b_vec.view(k, l)
 
         return GRUMParameters(delta=delta, interaction=b_matrix)
 
     def _q_objective(
         self,
-        s_matrix: FloatArray,
+        s_matrix: Tensor,
         params: GRUMParameters,
-        agent_features: FloatArray,
-        alternative_features: FloatArray,
+        agent_features: Tensor,
+        alternative_features: Tensor,
     ) -> float:
         sigma2 = self.config.sigma**2
         lam = self.config.prior_precision
 
         mu = compute_mean_utilities(params, agent_features, alternative_features)
         residual = s_matrix - mu
-        data_term = -0.5 / sigma2 * float(np.sum(residual**2))
-        prior_term = -0.5 * lam * float(np.sum(params.delta**2) + np.sum(params.interaction**2))
+        data_term = -0.5 / sigma2 * float(torch.sum(residual**2))
+        prior_term = -0.5 * lam * float(torch.sum(params.delta**2) + torch.sum(params.interaction**2))
         return data_term + prior_term

@@ -168,14 +168,14 @@ def test_can_reaggregate_old_jsons_with_function_call(tmp_path: Path) -> None:
 
     payload_a = {
         "seed": 0,
-        "asymptotic": [{"n_agents": 50, "mean_tau": 0.6}],
-        "criteria": {"random": 0.4, "social": 0.7},
+        "asymptotic": [{"n_agents": 50, "social_tau": 0.6, "mean_person_tau": 0.5, "raw_person_tau": 0.4}],
+        "criteria": {"random": {"social": 0.4}, "social": {"social": 0.7}},
         "timing": {"asymptotic_seconds": 1.0, "criteria_seconds": 2.0, "total_seconds": 3.0},
     }
     payload_b = {
         "seed": 1,
-        "asymptotic": [{"n_agents": 50, "mean_tau": 0.8}],
-        "criteria": {"random": 0.5, "social": 0.9},
+        "asymptotic": [{"n_agents": 50, "social_tau": 0.8, "mean_person_tau": 0.7, "raw_person_tau": 0.6}],
+        "criteria": {"random": {"social": 0.5}, "social": {"social": 0.9}},
         "timing": {"asymptotic_seconds": 1.5, "criteria_seconds": 2.5, "total_seconds": 4.0},
     }
 
@@ -193,8 +193,10 @@ def test_can_reaggregate_old_jsons_with_function_call(tmp_path: Path) -> None:
     assert set(written.keys()) == {"asymptotic", "criteria", "timing"}
 
     asym = json.loads(written["asymptotic"].read_text(encoding="utf-8"))
-    assert len(asym["rows"]) == 2
+    # 2 seeds * 3 metrics (social, mean_person, raw_person) = 6 rows
+    assert len(asym["rows"]) == 6
     assert asym["summary"][0]["n_agents"] == 50
+    # 2 seeds per metric-count group
     assert asym["summary"][0]["count"] == 2
 
 
@@ -207,8 +209,8 @@ def test_aggregate_criteria_curve_groups_by_criterion_and_n(tmp_path: Path) -> N
         "seed": 0,
         "criterion": "social",
         "criteria_curve": [
-            {"n_observations": 1, "kendall_tau": 0.1},
-            {"n_observations": 2, "kendall_tau": 0.2},
+            {"n_observations": 1, "social_tau": 0.1, "mean_person_tau": 0.05, "raw_person_tau": 0.04},
+            {"n_observations": 2, "social_tau": 0.2, "mean_person_tau": 0.15, "raw_person_tau": 0.14},
         ],
         "timing": {"total_seconds": 1.0},
     }
@@ -216,8 +218,8 @@ def test_aggregate_criteria_curve_groups_by_criterion_and_n(tmp_path: Path) -> N
         "seed": 1,
         "criterion": "social",
         "criteria_curve": [
-            {"n_observations": 1, "kendall_tau": 0.3},
-            {"n_observations": 2, "kendall_tau": 0.4},
+            {"n_observations": 1, "social_tau": 0.3, "mean_person_tau": 0.25, "raw_person_tau": 0.24},
+            {"n_observations": 2, "social_tau": 0.4, "mean_person_tau": 0.35, "raw_person_tau": 0.34},
         ],
         "timing": {"total_seconds": 2.0},
     }
@@ -230,7 +232,8 @@ def test_aggregate_criteria_curve_groups_by_criterion_and_n(tmp_path: Path) -> N
         aggregation_names=["criteria_curve"],
     )
     data = json.loads(written["criteria_curve"].read_text(encoding="utf-8"))
-    assert len(data["rows"]) == 4
+    # 2 seeds * 2 points * 3 metrics = 12 rows
+    assert len(data["rows"]) == 12
     by_n = {row["n_observations"]: row["mean"] for row in data["summary"] if row["criterion"] == "social"}
     assert by_n[1] == pytest.approx(0.2)
     assert by_n[2] == pytest.approx(0.3)

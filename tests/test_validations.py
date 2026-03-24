@@ -1,4 +1,4 @@
-import numpy as np
+import torch
 
 from grums.core import (
     interaction_design_matrix,
@@ -24,8 +24,8 @@ def test_connectivity_condition_false_for_disconnected_data() -> None:
 
 
 def test_identifiability_rank_check() -> None:
-    x = np.array([[1.0, 0.0], [0.0, 1.0]], dtype=float)
-    z = np.array([[1.0, 0.0], [0.0, 1.0]], dtype=float)
+    x = torch.tensor([[1.0, 0.0], [0.0, 1.0]], dtype=torch.float64)
+    z = torch.tensor([[1.0, 0.0], [0.0, 1.0]], dtype=torch.float64)
 
     design = interaction_design_matrix(x, z)
     assert design.shape == (4, 4)
@@ -33,7 +33,7 @@ def test_identifiability_rank_check() -> None:
 
 
 def test_identifiability_detects_rank_deficiency() -> None:
-    x = np.array([[1.0, 0.0], [2.0, 0.0]], dtype=float)
-    z = np.array([[1.0, 0.0], [2.0, 0.0]], dtype=float)
+    x = torch.tensor([[1.0, 0.0], [2.0, 0.0]], dtype=torch.float64)
+    z = torch.tensor([[1.0, 0.0], [2.0, 0.0]], dtype=torch.float64)
 
     assert not is_interaction_identifiable(x, z)

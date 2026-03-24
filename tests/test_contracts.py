@@ -1,13 +1,13 @@
-import numpy as np
+import torch
 
 from grums.contracts import AgentRecord, AlternativeRecord, RankingObservation
 
 
 def test_contracts_hold_expected_values() -> None:
-    agent = AgentRecord(agent_id="a1", features=np.array([1.0, 2.0]))
+    agent = AgentRecord(agent_id="a1", features=torch.tensor([1.0, 2.0]))
     alternatives = [
-        AlternativeRecord(alternative_id=0, features=np.array([0.1, 0.2])),
-        AlternativeRecord(alternative_id=1, features=np.array([0.3, 0.4])),
+        AlternativeRecord(alternative_id=0, features=torch.tensor([0.1, 0.2])),
+        AlternativeRecord(alternative_id=1, features=torch.tensor([0.3, 0.4])),
     ]
     obs = RankingObservation(agent_id=agent.agent_id, ranking=(1, 0))
 

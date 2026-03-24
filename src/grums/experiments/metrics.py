@@ -2,18 +2,22 @@
 
 from __future__ import annotations
 
+import torch
 import numpy as np
 from scipy.stats import kendalltau
 
 from grums.core.model_math import predict_deterministic_rankings
 from grums.core.parameters import GRUMParameters
 
+Tensor = torch.Tensor
 
-def social_choice_kendall_tau(delta_true: np.ndarray, delta_est: np.ndarray) -> float:
+
+def social_choice_kendall_tau(delta_true: Tensor, delta_est: Tensor) -> float:
     """Kendall tau between social-choice rankings induced by true and estimated delta."""
 
-    rank_true = np.argsort(-delta_true)
-    rank_est = np.argsort(-delta_est)
+    # Using argsort on CPU for kendalltau
+    rank_true = torch.argsort(delta_true, descending=True).cpu().numpy()
+    rank_est = torch.argsort(delta_est, descending=True).cpu().numpy()
     tau, _ = kendalltau(rank_true, rank_est)
     if np.isnan(tau):
         return 0.0
@@ -21,19 +25,12 @@ def social_choice_kendall_tau(delta_true: np.ndarray, delta_est: np.ndarray) -> 
 
 
 def social_choice_suboptimality(
-    params_true: "GRUMParameters",
-    params_est: "GRUMParameters",
-    agent_features: np.ndarray,
-    alternative_features: np.ndarray,
+    params_true: GRUMParameters,
+    params_est: GRUMParameters,
+    agent_features: Tensor,
+    alternative_features: Tensor,
 ) -> float:
-    """Kendall tau between social-choice rankings from full GRUMParameters.
-
-    Convenience wrapper over ``social_choice_kendall_tau`` for callers (e.g. the
-    sushi experiment) that hold full parameter objects rather than bare delta arrays.
-    The ``agent_features`` and ``alternative_features`` arguments are accepted for
-    API symmetry with ``personalized_mean_kendall_tau`` but are not used, since
-    social-choice quality depends only on the marginal ``delta`` vector.
-    """
+    """Kendall tau between social-choice rankings from full GRUMParameters."""
     _ = agent_features
     _ = alternative_features
     return social_choice_kendall_tau(params_true.delta, params_est.delta)
@@ -42,8 +39,8 @@ def social_choice_suboptimality(
 def personalized_mean_kendall_tau(
     params_true: GRUMParameters,
     params_est: GRUMParameters,
-    agent_features: np.ndarray,
-    alternative_features: np.ndarray,
+    agent_features: Tensor,
+    alternative_features: Tensor,
 ) -> float:
     """Average per-agent Kendall tau between predicted deterministic rankings."""
 
@@ -60,9 +57,9 @@ def personalized_mean_kendall_tau(
 
 def raw_mean_kendall_tau(
     params_est: GRUMParameters,
-    agent_features: np.ndarray,
-    alternative_features: np.ndarray,
-    observed_rankings: list[np.ndarray],
+    agent_features: Tensor,
+    alternative_features: Tensor,
+    observed_rankings: list[tuple[int, ...]],
 ) -> float:
     """Average per-agent Kendall tau between true deterministic rankings and raw observed rankings."""
 
@@ -77,15 +74,23 @@ def raw_mean_kendall_tau(
     return float(np.mean(taus))
 
 
-def moving_average(series: np.ndarray, window: int) -> np.ndarray:
+def moving_average(series: Tensor, window: int) -> Tensor:
     """Simple trailing moving average used for smoothed report curves."""
 
     if window <= 0:
         raise ValueError("window must be positive")
-    if series.ndim != 1:
+    if series.dim() != 1:
         raise ValueError("series must be 1D")
-    if window > series.shape[0]:
-        raise ValueError("window cannot exceed series length")
+    if window > series.size(0):
+        raise ValueError(f"window {window} cannot exceed series length {series.size(0)}")
 
-    weights = np.ones(window, dtype=float) / float(window)
-    return np.convolve(series, weights, mode="valid")
+    weights = torch.ones(window, dtype=series.dtype, device=series.device) / float(window)
+    
+    # Use 1D convolution
+    # Input needs (Batch, Channel, Length)
+    res = torch.nn.functional.conv1d(
+        series.view(1, 1, -1),
+        weights.view(1, 1, -1),
+        padding=0
+    )
+    return res.view(-1)

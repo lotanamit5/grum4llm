@@ -152,7 +152,7 @@ def test_criteria_curve_mode_writes_curve_payload(tmp_path: Path) -> None:
     assert "criteria_curve" in payload
     assert len(payload["criteria_curve"]) >= 2
     assert "n_observations" in payload["criteria_curve"][0]
-    assert "kendall_tau" in payload["criteria_curve"][0]
+    assert "social_tau" in payload["criteria_curve"][0]
 
 
 def test_output_path_creates_parent_directories(tmp_path: Path) -> None:

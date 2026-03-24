@@ -2,27 +2,26 @@
 
 from __future__ import annotations
 
-import numpy as np
-from numpy.typing import NDArray
+import torch
 
 from grums.core.parameters import GRUMParameters
 
-FloatArray = NDArray[np.float64]
+Tensor = torch.Tensor
 
 
 def compute_mean_utilities(
     params: GRUMParameters,
-    agent_features: FloatArray,
-    alternative_features: FloatArray,
-) -> FloatArray:
+    agent_features: Tensor,
+    alternative_features: Tensor,
+) -> Tensor:
     """Compute deterministic utilities mu_ij = delta_j + x_i B z_j^T.
 
     Returns an array of shape (n_agents, n_alternatives).
     """
 
-    if agent_features.ndim != 2:
+    if agent_features.dim() != 2:
         raise ValueError("agent_features must be a 2D matrix")
-    if alternative_features.ndim != 2:
+    if alternative_features.dim() != 2:
         raise ValueError("alternative_features must be a 2D matrix")
 
     n_agents, k = agent_features.shape
@@ -36,15 +35,15 @@ def compute_mean_utilities(
         raise ValueError("delta length must match number of alternatives")
 
     interaction_term = agent_features @ params.interaction @ alternative_features.T
-    return interaction_term + params.delta.reshape(1, n_alternatives).repeat(n_agents, axis=0)
+    return interaction_term + params.delta.view(1, n_alternatives).expand(n_agents, -1)
 
 
 def predict_deterministic_rankings(
     params: GRUMParameters,
-    agent_features: FloatArray,
-    alternative_features: FloatArray,
+    agent_features: Tensor,
+    alternative_features: Tensor,
 ) -> list[tuple[int, ...]]:
     """Predict per-agent rankings from deterministic utilities."""
 
     mu = compute_mean_utilities(params, agent_features, alternative_features)
-    return [tuple(np.argsort(-row)) for row in mu]
+    return [tuple(row.tolist()) for row in torch.argsort(mu, dim=1, descending=True)]
