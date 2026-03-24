@@ -119,12 +119,12 @@ def main():
     checkpoints_dict = {}
 
     def _on_after_map(n_obs: int, params: GRUMParameters) -> None:
-        s_tau = social_choice_kendall_tau(true_params.delta, params.delta)
-        mp_tau = personalized_mean_kendall_tau(true_params, params, test_agent_features, test_alternative_features)
-        rp_tau = raw_mean_kendall_tau(params, test_agent_features, test_alternative_features, test_rankings)
-        tau_by_n[n_obs] = {"social_tau": s_tau, "mean_person_tau": mp_tau, "raw_person_tau": rp_tau}
-        
         if checkpoints > 0 and (n_obs % checkpoints == 0 or n_obs == steps):
+            s_tau = social_choice_kendall_tau(true_params.delta, params.delta)
+            mp_tau = personalized_mean_kendall_tau(true_params, params, test_agent_features, test_alternative_features)
+            rp_tau = raw_mean_kendall_tau(params, test_agent_features, test_alternative_features, test_rankings)
+            tau_by_n[n_obs] = {"social_tau": s_tau, "mean_person_tau": mp_tau, "raw_person_tau": rp_tau}
+            
             checkpoints_dict[n_obs] = {
                 "delta": params.delta.tolist(),
                 "interaction": params.interaction.tolist()
@@ -165,6 +165,7 @@ def main():
         "criterion": criterion_name,
         "criteria_curve": curve_data,
         "true_delta": true_params.delta.tolist(),
+        "true_interaction": true_params.interaction.tolist(),
         "final_tau": curve_data[-1]["social_tau"] if curve_data else 0.0,
         "checkpoints": checkpoints_dict,
         "total_seconds": total_seconds,

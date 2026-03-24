@@ -575,7 +575,7 @@ def run_orchestration(
         for spec in specs:
             node = random.choice(nodes) if nodes else ""
             node_arg = f"-w {node} " if node else ""
-            cmd = f"sbatch -A {account} -p {partition} {node_arg}{worker_script} --config {spec.config_path}"
+            cmd = f"sbatch -A {account} -p {partition} {node_arg}-o {spec.log_path} -e {spec.log_path} {worker_script} --config {spec.config_path} --output_json {spec.output_path}"
             lines.append(cmd)
             
         sh_path.write_text("\n".join(lines) + "\n", encoding="utf-8")
