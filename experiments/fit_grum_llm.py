@@ -124,6 +124,14 @@ def main():
     k = pca_dim
     l = m # dimension of alternative features (one-hot)
     
+    print(f"\n[INFO] Starting LLM Elicitation Experiment")
+    print(f"       Model:      {model_id}")
+    print(f"       Domain:     {domain_name}")
+    print(f"       Criterion:  {criterion_name}")
+    print(f"       Steps:      {steps}")
+    print(f"       Seed:       {seed}")
+    print(f"       PCA Dim:    {pca_dim}")
+
     criteria = {
         "random": RandomCriterion(seed),
         "d_opt": DOptimalityCriterion(),
@@ -147,16 +155,22 @@ def main():
 
     # Initial seed observation (first agent compared to first two alternatives)
     seed_obs = provider.query_pairwise(agents[0], alternatives[0], alternatives[1])
+    print(f"[INFO] Seed Obs: Agent {agents[0].agent_id} preferred {alternative_texts[seed_obs.winner_id]} over {alternative_texts[seed_obs.loser_id]}")
 
     # 6. Run Engine
     tau_by_n = {}
     
+    from tqdm import tqdm
+    pbar = tqdm(total=steps, desc="Elicitation Rounds")
+
     def _on_after_map(n_obs: int, params: GRUMParameters) -> None:
         # We don't have true params for real LLMs, but we can track the estimated delta
         tau_by_n[n_obs] = {
             "delta": params.delta.cpu().tolist(),
             "interaction": params.interaction.cpu().tolist()
         }
+        if n_obs > 1: # We don't update on the seed init (n_obs=1)
+            pbar.update(1)
 
     # Candidate designs: all pairs for all candidate agents
     import itertools
@@ -167,6 +181,7 @@ def main():
 
     engine = AdaptiveElicitationEngine(criterion=criterion, mcem_config=mcem_config)
     
+    print(f"\n[INFO] Running Adaptive Elicitation Pipeline...")
     t0 = time.perf_counter()
     engine.run(
         provider=provider,
@@ -179,6 +194,7 @@ def main():
         on_after_map=_on_after_map,
     )
     t1 = time.perf_counter()
+    pbar.close()
 
     # 7. Payload & Output
     payload = {
