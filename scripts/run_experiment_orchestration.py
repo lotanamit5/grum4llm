@@ -69,8 +69,9 @@ def main():
             config_path = experiment_dir / "subconfigs" / f"{trial_id}.yml"
             
             # We use %j in the log filename so Slurm appends its numeric Job ID
-            log_out = experiment_dir / "logs" / f"{trial_id}_%j.out"
-            log_err = experiment_dir / "logs" / f"{trial_id}_%j.err"
+            # Sorting by %j first makes it easier to navigate logs in the cluster
+            log_out = experiment_dir / "logs" / f"%j_{trial_id}.out"
+            log_err = experiment_dir / "logs" / f"%j_{trial_id}.err"
             
             with open(config_path, "w") as sc:
                 yaml.safe_dump(trial_cfg, sc, sort_keys=False)
