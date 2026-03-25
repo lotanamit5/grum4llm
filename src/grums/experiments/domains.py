@@ -20,25 +20,36 @@ def load_domain(domain_name: str) -> dict:
     with open(path, "r", encoding="utf-8") as f:
         return json.load(f)
 
-def get_agent_features(embedding_method: str, agent_ids: list[str], prompts_by_agent_id: dict[str, str], model, tokenizer, rng, dummy: bool = False, seed: int = 42):
+def get_agent_features(
+    embedding_method: str, 
+    agent_ids: list[str], 
+    prompts_by_agent_id: dict[str, str], 
+    model, 
+    tokenizer, 
+    rng, 
+    dummy: bool = False, 
+    seed: int = 42,
+    pca_dim: int = 8
+):
     import numpy as np
     N = len(agent_ids)
     if embedding_method == "random":
-        return rng.normal(0, 1, size=(N, 5))
+        return rng.normal(0, 1, size=(N, pca_dim))
     
     if embedding_method == "hidden_state_pca":
         from sklearn.decomposition import PCA
         import torch
         
-        print("Extracting hidden states from Qwen...")
+        print(f"Extracting hidden states (Last Token) for {N} agents...")
         embeddings = []
         for aid in agent_ids:
             prompt = prompts_by_agent_id[aid]
-            clean_prompt = prompt.replace("{alternative}", "").strip()
+            # Keeping {A} and {B} as placeholders 
+            clean_prompt = prompt
             
             # Use real model unless dummy is specified
             if dummy or model is None:
-                # Fallback to random if dummy 
+                # Fallback to random if dummy (assuming Qwen hidden dim 896)
                 embeddings.append(rng.normal(0, 1, size=(896,)))
             else:
                 inputs = tokenizer(clean_prompt, return_tensors="pt").to(model.device)
@@ -49,8 +60,8 @@ def get_agent_features(embedding_method: str, agent_ids: list[str], prompts_by_a
                 embeddings.append(last_hidden)
                 
         embeddings = np.array(embeddings)
-        print("Applying PCA to reduce from", embeddings.shape[1], "to 5...")
-        pca = PCA(n_components=5, random_state=seed)
+        print(f"Applying PCA to reduce from {embeddings.shape[1]} to {pca_dim}...")
+        pca = PCA(n_components=pca_dim, random_state=seed)
         return pca.fit_transform(embeddings)
 
     if embedding_method == "sentence_transformer_pca":
@@ -60,13 +71,14 @@ def get_agent_features(embedding_method: str, agent_ids: list[str], prompts_by_a
         except ImportError:
             raise ImportError("Please install sentence-transformers: pip install sentence-transformers")
             
-        print("Extracting embeddings using sentence-transformers...")
+        print(f"Extracting embeddings using sentence-transformers for {N} agents...")
         st_model = SentenceTransformer("all-MiniLM-L6-v2")
-        texts = [prompts_by_agent_id[aid].replace("{alternative}", "").strip() for aid in agent_ids]
+        # Keeping {A} and {B} as placeholders
+        texts = [prompts_by_agent_id[aid] for aid in agent_ids]
         embeddings = st_model.encode(texts)
         
-        print("Applying PCA to reduce from", embeddings.shape[1], "to 5...")
-        pca = PCA(n_components=5, random_state=seed)
+        print(f"Applying PCA to reduce from {embeddings.shape[1]} to {pca_dim}...")
+        pca = PCA(n_components=pca_dim, random_state=seed)
         return pca.fit_transform(embeddings)
         
     raise ValueError(f"Unknown embedding method: {embedding_method}")
