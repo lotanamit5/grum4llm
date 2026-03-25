@@ -14,22 +14,16 @@ SRC = ROOT / "src"
 if str(SRC) not in sys.path:
     sys.path.insert(0, str(SRC))
 
-from grums.inference import MCEMConfig
 from grums.contracts import AgentRecord, AlternativeRecord, PairwiseObservation
+from grums.core.parameters import GRUMParameters
 from grums.elicitation import (
     AdaptiveElicitationEngine,
-    RandomCriterion,
-    DOptimalityCriterion,
-    EOptimalityCriterion,
-    SocialChoiceCriterion,
-    PersonalizedChoiceCriterion,
     PairwiseDesign,
 )
-from grums.providers import HuggingFaceProvider
+from grums.providers import HuggingFaceProvider, MockHuggingFaceProvider
+import utils
+from grums.experiments.metrics import social_choice_kendall_tau
 from grums.experiments.domains import load_domain, get_agent_features
-
-def _utc_now_iso() -> str:
-    return datetime.now(timezone.utc).isoformat(timespec="seconds")
 
 def main():
     parser = argparse.ArgumentParser()
@@ -49,16 +43,9 @@ def main():
     seed = cfg.get("seed", 42)
     pca_dim = cfg.get("pca_dim", 8)
     embedding_method = cfg.get("embedding_method", "hidden_state_pca")
-    mcem_cfg = cfg.get("mcem", {})
-
-    mcem_config = MCEMConfig(
-        n_iterations=mcem_cfg.get("n_iterations", 8),
-        n_gibbs_samples=mcem_cfg.get("n_gibbs_samples", 30),
-        n_gibbs_burnin=mcem_cfg.get("n_gibbs_burnin", 15),
-    )
-
-    device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-    print(f"Using device: {device}")
+    
+    mcem_config = utils.get_mcem_config(cfg.get("mcem", {}))
+    device = utils.get_torch_device(cfg.get("device", "auto"))
 
     # 2. Load Domain Data
     domain_data = load_domain(domain_name)
@@ -86,19 +73,9 @@ def main():
             device_map="auto", 
             torch_dtype=torch.float16 if device.type == "cuda" else torch.float32
         )
-    else:
-        # Mock objects for dry-run
-        from unittest.mock import MagicMock
-        tokenizer = MagicMock()
-        model = MagicMock()
-        model.device = device
-        # Mock compute_negative_perplexity internal call
-        # In providers/huggingface.py it calls tokenizer(text, ...)
-        tokenizer.side_effect = lambda text, **kwargs: MagicMock(input_ids=torch.zeros((1, len(text))))
-        # And model(input_ids, labels=input_ids)
-        model.side_effect = lambda input_ids, **kwargs: MagicMock(loss=torch.tensor(float(input_ids.size(1))))
 
     rng = np.random.default_rng(seed)
+    # get_agent_features will handle dummy mode internally for embedding fallback
     x = get_agent_features(
         embedding_method, 
         agent_ids, 
@@ -113,12 +90,18 @@ def main():
     agents = [AgentRecord(agent_id=aid, features=torch.from_numpy(x[i]).to(device).to(torch.float64)) for i, aid in enumerate(agent_ids)]
 
     # 4. Initialize Provider
-    provider = HuggingFaceProvider(
-        model=model,
-        tokenizer=tokenizer,
-        prompts_by_agent_id=prompts_by_agent_id,
-        alternative_texts=alternative_texts
-    )
+    if args.dummy:
+        provider = MockHuggingFaceProvider(
+            prompts_by_agent_id=prompts_by_agent_id,
+            alternative_texts=alternative_texts
+        )
+    else:
+        provider = HuggingFaceProvider(
+            model=model,
+            tokenizer=tokenizer,
+            prompts_by_agent_id=prompts_by_agent_id,
+            alternative_texts=alternative_texts
+        )
 
     # 5. Elicitation Setup
     k = pca_dim
@@ -132,26 +115,14 @@ def main():
     print(f"       Seed:       {seed}")
     print(f"       PCA Dim:    {pca_dim}")
 
-    criteria = {
-        "random": RandomCriterion(seed),
-        "d_opt": DOptimalityCriterion(),
-        "e_opt": EOptimalityCriterion(),
-        "social": SocialChoiceCriterion(n_alternatives=m),
-        "personalized": PersonalizedChoiceCriterion(
-            n_alternatives=m,
-            n_agent_features=k,
-            n_alternative_features=l,
-            alternative_features=torch.vstack([a.features for a in alternatives]),
-            population_agents=torch.vstack([a.features for a in agents]),
-        ),
-    }
+    criteria = utils.get_criteria_map(
+        m, k, l, seed, 
+        torch.vstack([a.features for a in alternatives]),
+        torch.vstack([a.features for a in agents]),
+    )
     criterion = criteria[criterion_name]
 
-    from grums.core.parameters import GRUMParameters
-    init_params = GRUMParameters(
-        delta=torch.zeros(m, device=device, dtype=torch.float64),
-        interaction=torch.zeros((k, l), device=device, dtype=torch.float64)
-    )
+    init_params = utils.get_init_params(m, k, l, device)
 
     # Initial seed observation (first agent compared to first two alternatives)
     seed_obs = provider.query_pairwise(agents[0], alternatives[0], alternatives[1])
@@ -209,19 +180,10 @@ def main():
             "total_seconds": t1 - t0,
             "average_step_seconds": (t1 - t0) / steps if steps > 0 else 0
         },
-        "finished_at_utc": _utc_now_iso(),
+        "finished_at_utc": utils.get_utc_timestamp(),
     }
 
-    output_path = args.output_json
-    if not output_path and "trial_id" in cfg and "exp_dir" in cfg:
-        output_path = Path(cfg["exp_dir"]) / "outputs" / f"{cfg['trial_id']}.json"
-
-    if output_path:
-        output_path.parent.mkdir(parents=True, exist_ok=True)
-        with open(output_path, "w") as f:
-            json.dump(payload, f, indent=2)
-    else:
-        print(json.dumps(payload, indent=2))
+    utils.save_experiment_result(payload, args.output_json, cfg)
 
 if __name__ == "__main__":
     main()

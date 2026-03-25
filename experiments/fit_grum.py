@@ -16,6 +16,7 @@ if str(SRC) not in sys.path:
     sys.path.insert(0, str(SRC))
 
 from grums.inference import MCEMConfig
+from grums.core.parameters import GRUMParameters
 from grums.providers.synthetic import SyntheticProvider
 from grums.experiments.sushi import _get_sushi_ground_truth
 from grums.providers import OracleRankingProvider
@@ -30,10 +31,8 @@ from grums.elicitation import (
     FullRankingDesign,
     PairwiseDesign,
 )
+import utils
 from grums.experiments.metrics import social_choice_kendall_tau, personalized_mean_kendall_tau, raw_mean_kendall_tau
-
-def _utc_now_iso() -> str:
-    return datetime.now(timezone.utc).isoformat(timespec="seconds")
 
 def main():
     parser = argparse.ArgumentParser()
@@ -49,15 +48,8 @@ def main():
     steps = cfg.get("steps", 75)
     checkpoints = cfg.get("checkpoints", 0)
     seed = cfg.get("seed", 42)
-    mcem_cfg = cfg.get("mcem", {})
-
-    mcem_config = MCEMConfig(
-        n_iterations=mcem_cfg.get("n_iterations", 8),
-        n_gibbs_samples=mcem_cfg.get("n_gibbs_samples", 30),
-        n_gibbs_burnin=mcem_cfg.get("n_gibbs_burnin", 15),
-    )
-
-    device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+    mcem_config = utils.get_mcem_config(cfg.get("mcem", {}))
+    device = utils.get_torch_device(cfg.get("device", "auto"))
 
     if dataset_name in ("ds0", "ds1", "ds2"):
         provider = SyntheticProvider(ds_name=dataset_name, seed=seed)
@@ -104,26 +96,18 @@ def main():
         raise ValueError(f"Unknown dataset: {dataset_name}")
 
     m = len(alternatives)
-    criteria = {
-        "random": RandomCriterion(seed),
-        "d_opt": DOptimalityCriterion(),
-        "e_opt": EOptimalityCriterion(),
-        "social": SocialChoiceCriterion(n_alternatives=m),
-        "personalized": PersonalizedChoiceCriterion(
-            n_alternatives=m,
-            n_agent_features=int(test_agent_features.size(1)),
-            n_alternative_features=int(test_alternative_features.size(1)),
-            alternative_features=test_alternative_features,
-            population_agents=test_agent_features,
-        ),
-    }
+    m = len(alternatives)
+    k = agents[0].features.shape[0]
+    l = alternatives[0].features.shape[0]
+
+    criteria = utils.get_criteria_map(
+        m, k, l, seed, 
+        test_alternative_features, 
+        test_agent_features
+    )
     criterion = criteria[criterion_name]
 
-    from grums.core.parameters import GRUMParameters
-    init_params = GRUMParameters(
-        delta=torch.zeros(m, device=device, dtype=torch.float64),
-        interaction=torch.zeros((test_agent_features.size(1), test_alternative_features.size(1)), device=device, dtype=torch.float64)
-    )
+    init_params = utils.get_init_params(m, k, l, device)
 
     seed_obs = RankingObservation(agent_id=agents[0].agent_id, ranking=ranking_by_agent[agents[0].agent_id])
 
@@ -217,22 +201,10 @@ def main():
             "total_seconds": total_seconds,
             "average_step_seconds": average_step_seconds,
         },
-        "finished_at_utc": _utc_now_iso(),
+        "finished_at_utc": utils.get_utc_timestamp(),
     }
 
-    # Resolve output_json from CLI or Config
-    output_path = None
-    if args.output_json:
-        output_path = Path(args.output_json)
-    elif "trial_id" in cfg and "exp_dir" in cfg:
-        output_path = Path(cfg["exp_dir"]) / "outputs" / f"{cfg['trial_id']}.json"
-
-    if output_path:
-        output_path.parent.mkdir(parents=True, exist_ok=True)
-        with open(output_path, "w") as f:
-            json.dump(payload, f, indent=2)
-    else:
-        print(json.dumps(payload, indent=2))
+    utils.save_experiment_result(payload, args.output_json, cfg)
 
 if __name__ == "__main__":
     main()

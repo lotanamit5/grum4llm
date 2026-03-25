@@ -33,7 +33,7 @@ def main():
     output_root = Path(experiment_cfg.get("output_root", "results"))
     
     # 2. Setup Experiment Paths
-    timestamp = get_utc_timestamp()
+    timestamp = get_utc_timestamp(compact=True)
     exp_dir = get_experiment_dir(output_root, run_prefix, timestamp)
     paths = ExperimentPaths.create(exp_dir)
 
