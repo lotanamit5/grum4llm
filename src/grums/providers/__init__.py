@@ -5,13 +5,18 @@ Implementations here are source-agnostic at the type level: observations carry n
 """
 
 from grums.providers.factory import build_preference_provider
-from grums.providers.huggingface import HuggingFaceProvider, MockHuggingFaceProvider
+from grums.providers.huggingface import (
+    HuggingFaceProvider, 
+    MockHuggingFaceProvider,
+    HuggingFaceChoiceProvider
+)
 from grums.providers.llm_stub import StubLLMPreferenceProvider
 from grums.providers.oracle import OracleRankingProvider
 
 __all__ = [
     "HuggingFaceProvider",
     "MockHuggingFaceProvider",
+    "HuggingFaceChoiceProvider",
     "OracleRankingProvider",
     "StubLLMPreferenceProvider",
     "build_preference_provider",

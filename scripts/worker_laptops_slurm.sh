@@ -1,0 +1,33 @@
+#!/bin/bash
+#SBATCH -A bml
+#SBATCH -p bml
+#SBATCH --gres=gpu:1
+#SBATCH --cpus-per-task=16
+#SBATCH --mem=64G
+#SBATCH --time=24:00:00
+
+set -e
+set -o pipefail
+
+# Environment setup
+source "$(conda info --base)/etc/profile.d/conda.sh"
+conda activate env
+
+export OMP_NUM_THREADS=16
+export OPENBLAS_NUM_THREADS=16
+export MKL_NUM_THREADS=16
+
+# Ensure project roots are in PYTHONPATH
+export PYTHONPATH=src:experiments
+
+CONFIG_PATH=$1
+
+if [ -z "$CONFIG_PATH" ]; then
+    echo "Usage: sbatch $0 <config_path>"
+    exit 1
+fi
+
+echo "Starting GRUM Laptop Worker with config: $CONFIG_PATH"
+python experiments/fit_grum_laptops.py --config "$CONFIG_PATH"
+
+echo "Worker finished successfully."

@@ -118,10 +118,14 @@ class MockHuggingFaceProvider(PreferenceProvider):
     """
     def __init__(
         self,
-        prompts_by_agent_id: dict[str, str],
+        model_id: str = "mock-model",
+        device: str = "cpu",
+        prompts_by_agent_id: dict[str, str] | None = None,
         alternative_texts: dict[int, str] | None = None
     ):
-        self._prompts_by_agent_id = prompts_by_agent_id
+        self.model_id = model_id
+        self.device = device
+        self._prompts_by_agent_id = prompts_by_agent_id or {}
         self._alternative_texts = alternative_texts or {}
 
     def query_pairwise(
@@ -130,24 +134,107 @@ class MockHuggingFaceProvider(PreferenceProvider):
         alt_a: AlternativeRecord,
         alt_b: AlternativeRecord,
     ) -> PairwiseObservation:
-        if agent.agent_id not in self._prompts_by_agent_id:
-            raise KeyError(f"No prompt defined for agent_id: {agent.agent_id!r}")
+        # 1. Get Prompt
+        if hasattr(agent, "prompt"):
+            template = getattr(agent, "prompt")
+        else:
+            template = self._prompts_by_agent_id.get(agent.agent_id, "Candidate {A} vs {B}")
             
-        template = self._prompts_by_agent_id[agent.agent_id]
-        text_a = self._alternative_texts.get(alt_a.alternative_id, str(alt_a.alternative_id))
-        text_b = self._alternative_texts.get(alt_b.alternative_id, str(alt_b.alternative_id))
+        # 2. Get Descriptions
+        text_a = getattr(alt_a, "description") if hasattr(alt_a, "description") else \
+                 self._alternative_texts.get(alt_a.alternative_id, str(alt_a.alternative_id))
+        text_b = getattr(alt_b, "description") if hasattr(alt_b, "description") else \
+                 self._alternative_texts.get(alt_b.alternative_id, str(alt_b.alternative_id))
         
-        def get_dummy_score(prompt_a, prompt_b, choice_text):
+        def get_dummy_score(prompt, a_text, b_text):
             # Simulate "perplexity" via text length
-            t1 = prompt_a.format(A=text_a, B=text_b) if "{A}" in prompt_a else f"{prompt_a}{choice_text}"
-            t2 = prompt_b.format(A=text_b, B=text_a) if "{A}" in prompt_b else f"{prompt_b}{choice_text}"
-            # Shorter is better (higher score)
-            return -(len(t1) + len(t2)) / 2.0
+            # If it's a choice format (no placeholders), use as is
+            try:
+                t = prompt.format(A=a_text, B=b_text)
+            except (KeyError, IndexError):
+                t = f"{prompt} {a_text} {b_text}"
+            return -len(t) # Shorter is better
 
-        score_a = get_dummy_score(template, template, text_a)
-        score_b = get_dummy_score(template, template, text_b)
+        score_a = get_dummy_score(template, text_a, text_b)
+        score_b = get_dummy_score(template, text_b, text_a)
         
         winner_id = alt_a.alternative_id if score_a > score_b else alt_b.alternative_id
+        loser_id = alt_b.alternative_id if winner_id == alt_a.alternative_id else alt_a.alternative_id
+        
+        return PairwiseObservation(
+            agent_id=agent.agent_id,
+            winner_id=winner_id,
+            loser_id=loser_id,
+        )
+
+
+class HuggingFaceChoiceProvider(HuggingFaceProvider):
+    """
+    HuggingFace provider for multiple-choice preference elicitation.
+    Compares the log-probabilities of two specific labels (e.g., '1' vs '2') 
+    instead of full-sequence perplexity.
+    """
+
+    def __init__(
+        self,
+        model_id: str,
+        device: str = "auto",
+        labels: tuple[str, str] = ("1", "2"),
+        **kwargs,
+    ):
+        # We don't call super().__init__ because we want different args
+        # But we need model and tokenizer
+        from transformers import AutoModelForCausalLM, AutoTokenizer
+        self.device = device
+        self._model = AutoModelForCausalLM.from_pretrained(model_id).to(device)
+        self._tokenizer = AutoTokenizer.from_pretrained(model_id)
+        
+        self.labels = labels
+        # Pre-tokenize labels (taking the first token for simplicity)
+        self.label_ids = [
+            self._tokenizer.encode(label, add_special_tokens=False)[-1] 
+            for label in labels
+        ]
+        print(f"[INFO] HuggingFaceChoiceProvider initialized with labels {labels} (ids: {self.label_ids})")
+
+    def query_pairwise(
+        self, agent: AgentRecord, alt_a: AlternativeRecord, alt_b: AlternativeRecord
+    ) -> PairwiseObservation:
+        """
+        Query the model for choice probabilities of (1) vs (2).
+        Returns a winner_id and loser_id.
+        """
+        import torch
+        import torch.nn.functional as F
+
+        # 1. Forward Pass (A, B)
+        prompt1 = agent.prompt.format(A=alt_a.description, B=alt_b.description)
+        inputs1 = self._tokenizer(prompt1, return_tensors="pt").to(self.device)
+        
+        with torch.no_grad():
+            outputs1 = self._model(**inputs1)
+            next_token_logits1 = outputs1.logits[0, -1, :]
+            target_logits1 = next_token_logits1[self.label_ids]
+            log_probs1 = F.log_softmax(target_logits1, dim=0)
+            # Prob(A) is log_probs1[0]
+            prob_a1 = torch.exp(log_probs1[0]).item()
+
+        # 2. Permuted Pass (B, A)
+        prompt2 = agent.prompt.format(A=alt_b.description, B=alt_a.description)
+        inputs2 = self._tokenizer(prompt2, return_tensors="pt").to(self.device)
+        
+        with torch.no_grad():
+            outputs2 = self._model(**inputs2)
+            next_token_logits2 = outputs2.logits[0, -1, :]
+            target_logits2 = next_token_logits2[self.label_ids]
+            log_probs2 = F.log_softmax(target_logits2, dim=0)
+            # Prob(A) is log_probs2[1]
+            prob_a2 = torch.exp(log_probs2[1]).item()
+
+        # 3. Average Probabilities
+        avg_prob_a = 0.5 * (prob_a1 + prob_a2)
+        
+        winner_id = alt_a.alternative_id if avg_prob_a > 0.5 else alt_b.alternative_id
         loser_id = alt_b.alternative_id if winner_id == alt_a.alternative_id else alt_a.alternative_id
         
         return PairwiseObservation(

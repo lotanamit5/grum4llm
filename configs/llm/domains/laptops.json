@@ -1,0 +1,44 @@
+{
+  "alternatives": [
+    "ASUS VivoBook 15 (i3, 8GB, $450)",
+    "Lenovo IdeaPad 3 (i5, 8GB, $550)",
+    "HP Pavilion 15 (Ryzen 5, 8GB, $600)",
+    "ASUS ZenBook 14 (i5, 16GB, $700)",
+    "Lenovo ThinkPad E14 (Ryzen 5, 16GB, $800)",
+    "Dell Inspiron 16 (i7, 16GB, $1100)",
+    "HP Spectre x360 (Ryzen 7, 32GB, $1200)",
+    "Dell XPS 15 (i7, 32GB, $1500)",
+    "Lenovo ThinkPad X1 Carbon (Ryzen 7, 32GB, $1400)",
+    "Apple MacBook Air M3 (M3, 16GB, $1800)",
+    "Apple MacBook Pro 14-inch (M3, 32GB, $2220)",
+    "Apple MacBook Pro 16-inch (M3, 64GB, $2800)"
+  ],
+  "alternative_features": [
+    [0, 0, 0, 0, 1, 0.2, 8, 450],
+    [0, 0, 0, 1, 0, 0.4, 8, 550],
+    [0, 0, 1, 0, 0, 0.4, 8, 600],
+    [0, 0, 0, 0, 1, 0.4, 16, 700],
+    [0, 0, 0, 1, 0, 0.4, 16, 800],
+    [0, 1, 0, 0, 0, 0.6, 16, 1100],
+    [0, 0, 1, 0, 0, 0.8, 32, 1200],
+    [0, 1, 0, 0, 0, 0.6, 32, 1500],
+    [0, 0, 0, 1, 0, 0.8, 32, 1400],
+    [1, 0, 0, 0, 0, 1.0, 16, 1800],
+    [1, 0, 0, 0, 0, 1.0, 32, 2220],
+    [1, 0, 0, 0, 0, 1.0, 64, 2800]
+  ],
+  "feature_names": ["Apple", "Dell", "HP", "Lenovo", "ASUS", "CPU_Rank", "RAM_GB", "Price_USD"],
+  "personas": {
+    "student": "You are a college student on a tight budget. You need a laptop primarily for web browsing, writing papers, and light coding. Getting the best value for money is your top priority.",
+    "gamer": "You are a competitive online gamer who also streams on Twitch. You need a laptop with high performance for gaming, streaming, and multitasking. Fast processor speed and large RAM are critical.",
+    "business": "You are a senior business consultant who travels frequently. You need a reliable, professional laptop for presentations, video conferences, and client meetings. Brand reputation and build quality matter most to you.",
+    "editor": "You are a professional video editork working on 4K film projects. You need the most powerful laptop available for rendering, color grading, and editing in professional software. Processing power and memory are everything — price is secondary."
+  },
+  "prompts": [
+    "Persona: {PERSONA}\n\nOption (a): {A}\nOption (b): {B}\n\nQuestion: Between these two laptops, which one would you choose?\nAnswer:",
+    "You are as follows: {PERSONA}\n\nWhich of the following describes your preferred choice better?\n(a) {A}\n(b) {B}\nMy choice:",
+    "Considering your profile: {PERSONA}\nCompare these candidates:\nLaptop A: {A}\nLaptop B: {B}\nPreferred candidate (a/b):",
+    "Profile: {PERSONA}\nLaptops: \n1. {A}\n2. {B}\nBased on your needs, select (a) for 1 or (b) for 2.\nSelection:",
+    "{PERSONA}\n\nCandidates:\n(a) {A}\n(b) {B}\nFinal Choice:"
+  ]
+}
