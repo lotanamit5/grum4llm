@@ -14,8 +14,8 @@ from grums.contracts import (
     PreferenceProvider, 
     RankingObservation,
     PairwiseObservation,
-    compile_constraint_graph
 )
+from grums.elicitation.designs import QueryDesign
 from grums.core.parameters import GRUMParameters
 from grums.elicitation.criteria import DesignCriterion
 from grums.inference import (
@@ -63,7 +63,7 @@ class AdaptiveElicitationEngine:
         initial_params: GRUMParameters,
         initial_observations: list[Observation],
         observed_agents: list[AgentRecord],
-        candidate_agents: list[AgentRecord],
+        candidate_designs: list[QueryDesign],
         alternatives: list[AlternativeRecord],
         n_rounds: int,
         *,
@@ -81,11 +81,11 @@ class AdaptiveElicitationEngine:
         alternative_features = torch.vstack([a.features for a in alternatives_sorted]).to(self.device).to(torch.float64)
 
         observations = list(initial_observations)
-        queried_ids = {o.agent_id for o in observations}
+        active_designs = list(candidate_designs)
         history: list[ElicitationStep] = []
 
+        # We maintain a lookup of features for all agents we have queried or might query
         observed_lookup = {a.agent_id: a for a in observed_agents}
-        candidate_lookup = {a.agent_id: a for a in candidate_agents}
 
         params = GRUMParameters(
             delta=initial_params.delta.to(self.device).to(torch.float64),
@@ -116,39 +116,37 @@ class AdaptiveElicitationEngine:
             base_precision = posterior_precision(obs_fisher, self.mcem_config.prior_precision)
             theta_vec = torch.cat([params.delta, params.interaction.reshape(-1)])
 
-            best_agent: AgentRecord | None = None
+            best_design: QueryDesign | None = None
             best_score = float("-inf")
+            best_idx = -1
 
-            for candidate in candidate_agents:
-                if candidate.agent_id in queried_ids:
-                    continue
-                
-                cand_feat = candidate.features.to(self.device).to(torch.float64)
-                cand_info = candidate_fisher_information(
-                    cand_feat,
-                    alternative_features,
-                    n_alternatives=params.n_alternatives,
-                    sigma=self.mcem_config.sigma,
-                )
-                score = self.criterion.score(base_precision + cand_info, theta_vec)
+            for idx, design in enumerate(active_designs):
+                info = design.get_information(params, self.mcem_config.sigma)
+                score = self.criterion.score(base_precision + info, theta_vec)
                 if score > best_score:
                     best_score = score
-                    best_agent = candidate
+                    best_design = design
+                    best_idx = idx
 
-            if best_agent is None:
+            if best_design is None:
                 break
 
-            # TODO: Add logic to decide whether to query full or pairwise.
-            # For now, default to full ranking to maintain legacy behavior for Figure repro.
-            new_obs = provider.query_full_ranking(best_agent, alternatives_sorted)
+            # Execute the best design
+            new_obs = best_design.execute(provider)
             observations.append(new_obs)
-            queried_ids.add(best_agent.agent_id)
-            observed_lookup[best_agent.agent_id] = candidate_lookup[best_agent.agent_id]
+            
+            # Update lookups for future fit_map/fisher calls
+            target_agent = best_design.agent
+            if target_agent.agent_id not in observed_lookup:
+                observed_lookup[target_agent.agent_id] = target_agent
+            
+            # Remove the used design
+            active_designs.pop(best_idx)
 
             history.append(
                 ElicitationStep(
                     iteration=t,
-                    selected_agent_id=best_agent.agent_id,
+                    selected_agent_id=target_agent.agent_id,
                     criterion_score=float(best_score),
                     n_observations=len(observations),
                 )

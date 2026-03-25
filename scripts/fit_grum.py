@@ -27,6 +27,8 @@ from grums.elicitation import (
     EOptimalityCriterion,
     SocialChoiceCriterion,
     PersonalizedChoiceCriterion,
+    FullRankingDesign,
+    PairwiseDesign,
 )
 from grums.experiments.metrics import social_choice_kendall_tau, personalized_mean_kendall_tau, raw_mean_kendall_tau
 
@@ -154,6 +156,25 @@ def main():
     # Record initial state (0 observations made) if checkpoints > 0
     _on_after_map(1, init_params)
 
+    # Generate candidate designs
+    query_type = cfg.get("query_type", "full")
+    candidate_designs = []
+    
+    if query_type == "full":
+        # Legacy behavior: one full ranking query per candidate agent
+        for agent in agents[1:]:
+            candidate_designs.append(FullRankingDesign(agent, alternatives))
+    elif query_type == "pairwise":
+        # Unified behavior: all possible pairs for all candidate agents
+        # Note: This can be a large number of designs (N * m*(m-1)/2)
+        import itertools
+        alts_sorted = sorted(alternatives, key=lambda a: a.alternative_id)
+        for agent in agents[1:]:
+            for alt_a, alt_b in itertools.combinations(alts_sorted, 2):
+                candidate_designs.append(PairwiseDesign(agent, alt_a, alt_b))
+    else:
+        raise ValueError(f"Unknown query_type: {query_type}")
+
     engine = AdaptiveElicitationEngine(criterion=criterion, mcem_config=mcem_config)
     
     t0 = time.perf_counter()
@@ -162,7 +183,7 @@ def main():
         initial_params=init_params,
         initial_observations=[seed_obs],
         observed_agents=[agents[0]],
-        candidate_agents=agents[1:],
+        candidate_designs=candidate_designs,
         alternatives=alternatives,
         n_rounds=steps,
         on_after_map=_on_after_map,
