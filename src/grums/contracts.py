@@ -70,8 +70,12 @@ def compile_constraint_graph(observations: list[Observation]) -> dict[str, list[
     for obs in observations:
         edges = graph.setdefault(obs.agent_id, [])
         if isinstance(obs, RankingObservation):
-            for i in range(len(obs.ranking) - 1):
-                edges.append((obs.ranking[i], obs.ranking[i+1]))
+            # Decompose ranking into all transitive pairs (winner > loser)
+            # e.g. [0, 1, 2] -> (0, 1), (0, 2), (1, 2)
+            n_items = len(obs.ranking)
+            for i in range(n_items):
+                for j in range(i + 1, n_items):
+                    edges.append((obs.ranking[i], obs.ranking[j]))
         elif isinstance(obs, PairwiseObservation):
             edges.append((obs.winner_id, obs.loser_id))
             

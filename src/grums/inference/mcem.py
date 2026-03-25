@@ -45,17 +45,17 @@ class MCEMInference:
 
     def _compile_adjacencies(
         self,
-        observations: list[Observation],
+        graph: dict[str, list[tuple[int, int]]],
+        unique_agent_ids: list[str],
         n_alternatives: int,
     ) -> tuple[Tensor, Tensor]:
         """Compile pairwise directed graphs into boolean adjacency arrays matching parallel operations."""
-        n_agents = len(observations)
+        n_agents = len(unique_agent_ids)
         adj_upper = torch.zeros((n_agents, n_alternatives, n_alternatives), dtype=torch.bool, device=self.device)
         adj_lower = torch.zeros((n_agents, n_alternatives, n_alternatives), dtype=torch.bool, device=self.device)
         
-        graph = compile_constraint_graph(observations)
-        for i, obs in enumerate(observations):
-            edges = graph.get(obs.agent_id, [])
+        for i, agent_id in enumerate(unique_agent_ids):
+            edges = graph.get(agent_id, [])
             for winner, loser in edges:
                 adj_lower[i, winner, loser] = True # loser is a lower bound for winner
                 adj_upper[i, loser, winner] = True # winner is an upper bound for loser
@@ -73,28 +73,36 @@ class MCEMInference:
             delta=initial_params.delta.to(self.device),
             interaction=initial_params.interaction.to(self.device)
         )
-        agent_features = agent_features.to(self.device)
         alternative_features = alternative_features.to(self.device)
         
-        n_agents = len(observations)
-        if n_agents != agent_features.size(0):
-            raise ValueError("Mismatch between agents count and features")
-            
-        n_alts = int(params.n_alternatives)
+        # Consolidation logic: group observations by unique agent_id
+        # This ensures that one agent = one latent vector in the E-step
+        graph = compile_constraint_graph(observations)
+        unique_agent_ids = list(graph.keys())
+        n_unique_agents = len(unique_agent_ids)
         
-        # Parallel constraints matrix mapping bounds dynamically
-        adj_upper, adj_lower = self._compile_adjacencies(observations, n_alts)
+        # Map agent_id to its first encountered features row for consistency
+        agent_id_to_first_idx = {}
+        for i, obs in enumerate(observations):
+            if obs.agent_id not in agent_id_to_first_idx:
+                agent_id_to_first_idx[obs.agent_id] = i
+        
+        consolidated_features = torch.stack([
+            agent_features[agent_id_to_first_idx[aid]] for aid in unique_agent_ids
+        ]).to(self.device)
+        
+        n_alts = int(params.n_alternatives)
+        adj_upper, adj_lower = self._compile_adjacencies(graph, unique_agent_ids, n_alts)
         
         objective_trace: list[float] = []
-
         torch.manual_seed(self.config.random_seed)
         
         converged = False
         for step in range(1, self.config.n_iterations + 1):
-            s = self._e_step(params, adj_upper, adj_lower, agent_features, alternative_features)
-            new_params = self._m_step(s, params, agent_features, alternative_features)
+            s = self._e_step(params, adj_upper, adj_lower, consolidated_features, alternative_features)
+            new_params = self._m_step(s, params, consolidated_features, alternative_features)
 
-            q_val = self._q_objective(s, new_params, agent_features, alternative_features)
+            q_val = self._q_objective(s, new_params, consolidated_features, alternative_features)
             objective_trace.append(float(q_val))
 
             param_diff = torch.linalg.norm(new_params.delta - params.delta) + torch.linalg.norm(
@@ -114,7 +122,7 @@ class MCEMInference:
         return MCEMResult(
             params=params,
             objective_trace=tuple(objective_trace),
-            converged=converged,
+            converged=False,
             n_iterations=self.config.n_iterations,
         )
 
