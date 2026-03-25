@@ -7,17 +7,12 @@
 set -e
 set -o pipefail
 
-if [ "$#" -lt 3 ]; then
-    echo "Usage: $0 <exp_dir> <trial_id> <config_path>"
+if [ "$#" -lt 1 ]; then
+    echo "Usage: $0 <config_path>"
     exit 1
 fi
 
-EXP_DIR="$1"
-TRIAL_ID="$2"
-CONFIG_PATH="$3"
-
-# Output JSON is named after the logical Trial ID
-OUTPUT_JSON="${EXP_DIR}/outputs/${TRIAL_ID}.json"
+CONFIG_PATH="$1"
 
 # Optimization: Match threads to allocated CPUs (16)
 export OMP_NUM_THREADS=16
@@ -29,5 +24,5 @@ source "$(conda info --base)/etc/profile.d/conda.sh"
 conda activate env
 
 # Run experiment
-# Note: You can access the numeric Slurm Job ID via $SLURM_JOB_ID if needed
-python scripts/fit_grum.py --config "$CONFIG_PATH" --output_json "$OUTPUT_JSON"
+# output_json is resolved internally by fit_grum.py using trial_id and exp_dir
+python scripts/fit_grum.py --config "$CONFIG_PATH"

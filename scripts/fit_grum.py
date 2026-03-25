@@ -220,8 +220,14 @@ def main():
         "finished_at_utc": _utc_now_iso(),
     }
 
+    # Resolve output_json from CLI or Config
+    output_path = None
     if args.output_json:
         output_path = Path(args.output_json)
+    elif "trial_id" in cfg and "exp_dir" in cfg:
+        output_path = Path(cfg["exp_dir"]) / "outputs" / f"{cfg['trial_id']}.json"
+
+    if output_path:
         output_path.parent.mkdir(parents=True, exist_ok=True)
         with open(output_path, "w") as f:
             json.dump(payload, f, indent=2)

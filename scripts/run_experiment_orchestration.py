@@ -66,10 +66,13 @@ def main():
             trial_cfg = dict(base_cfg)
             trial_cfg.update(overrides)
             
+            # Embed trial metadata into config
+            trial_cfg["trial_id"] = trial_id
+            trial_cfg["exp_dir"] = str(experiment_dir)
+            
             config_path = experiment_dir / "subconfigs" / f"{trial_id}.yml"
             
-            # We use %j in the log filename so Slurm appends its numeric Job ID
-            # Sorting by %j first makes it easier to navigate logs in the cluster
+            # Use %j for numeric job id, sorted by job id first
             log_out = experiment_dir / "logs" / f"%j_{trial_id}.out"
             log_err = experiment_dir / "logs" / f"%j_{trial_id}.err"
             
@@ -78,11 +81,11 @@ def main():
             
             node_arg = f"-w {random.choice(nodes_list)} " if nodes_list else ""
             
-            # We pass the trial_id to the worker script so it can name the output JSON
+            # Pass only the config_path to the worker
             cmd = (
                 f"sbatch -A bml -p bml {node_arg}"
                 f"-o {log_out} -e {log_err} "
-                f"{worker_script} {experiment_dir} {trial_id} {config_path}"
+                f"{worker_script} {config_path}"
             )
             f.write(f"{cmd}\n")
 
