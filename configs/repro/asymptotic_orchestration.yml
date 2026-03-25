@@ -5,6 +5,7 @@ experiment:
 base:
   steps: 500
   checkpoints: 50
+  query_type: "full"
   mcem:
     n_iterations: 8
     n_gibbs_samples: 30
