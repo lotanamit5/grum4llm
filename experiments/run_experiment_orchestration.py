@@ -4,7 +4,6 @@
 import argparse
 import yaml
 from pathlib import Path
-from datetime import datetime, timezone
 import random
 import sys
 
@@ -13,10 +12,8 @@ ROOT = Path(__file__).resolve().parents[1]
 if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
 
-from experiments.utils import expand_sweep
-
-def _utc_now_iso() -> str:
-    return datetime.now(timezone.utc).strftime("%Y%m%d-%H%M%S")
+from experiments.utils import expand_sweep, get_utc_timestamp, get_trial_id, create_trial_config
+from experiments.paths import get_experiment_dir, ExperimentPaths
 
 def main():
     parser = argparse.ArgumentParser(description="Standalone GRUM Orchestrator")
@@ -35,49 +32,34 @@ def main():
     run_prefix = experiment_cfg.get("run_prefix", "exp")
     output_root = Path(experiment_cfg.get("output_root", "results"))
     
-    # 2. Expand Sweep overrides (Product of all sweep params)
+    # 2. Setup Experiment Paths
+    timestamp = get_utc_timestamp()
+    exp_dir = get_experiment_dir(output_root, run_prefix, timestamp)
+    paths = ExperimentPaths.create(exp_dir)
+
+    # 3. Expand Sweep overrides (Product of all sweep params)
     overrides_list = expand_sweep(sweep_cfg)
     
-    # 3. Create unique experiment directory
-    timestamp = _utc_now_iso()
-    experiment_id = f"{run_prefix}-{timestamp}"
-    experiment_dir = (output_root / experiment_id).resolve()
-    
-    (experiment_dir / "subconfigs").mkdir(parents=True, exist_ok=True)
-    (experiment_dir / "outputs").mkdir(parents=True, exist_ok=True)
-    (experiment_dir / "logs").mkdir(parents=True, exist_ok=True)
-
     # 4. Generate Subconfigs & Runner
     nodes_list = [n.strip() for n in args.nodes.split(",") if n.strip()] if args.nodes else []
-    runner_path = experiment_dir / "slurm_runner.sh"
+    runner_path = paths.root / "slurm_runner.sh"
     worker_script = Path("scripts/worker_slurm.sh").resolve()
     
     with open(runner_path, "w") as f:
         f.write("#!/usr/bin/env bash\n\n")
-        f.write(f"# Experiment: {experiment_id}\n")
+        f.write(f"# Experiment: {exp_dir.name}\n")
         f.write(f"# Total runs: {len(overrides_list)}\n\n")
         
         for i, overrides in enumerate(overrides_list):
-            # Unique identification for this trial (Trial ID)
-            suffix = "_".join(f"{k}_{v}" for k, v in overrides.items())
-            trial_id = f"run_{i:03d}_{suffix}" if suffix else f"run_{i:03d}"
+            trial_id = get_trial_id(i, overrides)
+            config_path = paths.subconfigs / f"{trial_id}.yml"
             
-            # Merge base and sweep overrides
-            trial_cfg = dict(base_cfg)
-            trial_cfg.update(overrides)
-            
-            # Embed trial metadata into config
-            trial_cfg["trial_id"] = trial_id
-            trial_cfg["exp_dir"] = str(experiment_dir)
-            
-            config_path = experiment_dir / "subconfigs" / f"{trial_id}.yml"
+            # Create trial config
+            create_trial_config(base_cfg, overrides, trial_id, paths.root, config_path)
             
             # Use %j for numeric job id, sorted by job id first
-            log_out = experiment_dir / "logs" / f"%j_{trial_id}.out"
-            log_err = experiment_dir / "logs" / f"%j_{trial_id}.err"
-            
-            with open(config_path, "w") as sc:
-                yaml.safe_dump(trial_cfg, sc, sort_keys=False)
+            log_out = paths.logs / f"%j_{trial_id}.out"
+            log_err = paths.logs / f"%j_{trial_id}.err"
             
             node_arg = f"-w {random.choice(nodes_list)} " if nodes_list else ""
             
@@ -90,7 +72,7 @@ def main():
             f.write(f"{cmd}\n")
 
     runner_path.chmod(0o755)
-    print(f"Created experiment directory: {experiment_dir}")
+    print(f"Created experiment directory: {exp_dir}")
     print(f"Generated {len(overrides_list)} subconfigs.")
     print(f"Slurm runner script: {runner_path}")
 
