@@ -3,6 +3,7 @@
 
 import argparse
 import yaml
+import itertools
 from pathlib import Path
 from datetime import datetime, timezone
 import random
@@ -41,30 +42,13 @@ def main():
     # 3. Create unique experiment directory
     timestamp = _utc_now_iso()
     experiment_id = f"{run_prefix}-{timestamp}"
-    experiment_dir = output_root / experiment_id
+    experiment_dir = (output_root / experiment_id).resolve()
     
     (experiment_dir / "subconfigs").mkdir(parents=True, exist_ok=True)
     (experiment_dir / "outputs").mkdir(parents=True, exist_ok=True)
     (experiment_dir / "logs").mkdir(parents=True, exist_ok=True)
 
-    # 4. Generate Subconfigs
-    subrun_specs = []
-    for i, overrides in enumerate(overrides_list):
-        # Merge base and sweep overrides
-        trial_cfg = dict(base_cfg)
-        trial_cfg.update(overrides)
-        
-        suffix = "_".join(f"{k}_{v}" for k, v in overrides.items())
-        config_path = experiment_dir / "subconfigs" / f"run_{i:03d}_{suffix}.yml"
-        output_path = experiment_dir / "outputs" / f"run_{i:03d}_{suffix}.json"
-        log_path = experiment_dir / "logs" / f"run_{i:03d}_{suffix}.log"
-        
-        with open(config_path, "w") as f:
-            yaml.safe_dump(trial_cfg, f, sort_keys=False)
-            
-        subrun_specs.append({"config": config_path, "output": output_path, "log": log_path})
-
-    # 5. Generate slurm_runner.sh
+    # 4. Generate Subconfigs & Runner
     nodes_list = [n.strip() for n in args.nodes.split(",") if n.strip()] if args.nodes else []
     runner_path = experiment_dir / "slurm_runner.sh"
     worker_script = Path("scripts/worker_slurm.sh").resolve()
@@ -72,20 +56,36 @@ def main():
     with open(runner_path, "w") as f:
         f.write("#!/usr/bin/env bash\n\n")
         f.write(f"# Experiment: {experiment_id}\n")
-        f.write(f"# Total runs: {len(subrun_specs)}\n\n")
+        f.write(f"# Total runs: {len(overrides_list)}\n\n")
         
-        for spec in subrun_specs:
+        for i, overrides in enumerate(overrides_list):
+            # Unique identification for this trial
+            suffix = "_".join(f"{k}_{v}" for k, v in overrides.items())
+            job_id = f"run_{i:03d}_{suffix}" if suffix else f"run_{i:03d}"
+            
+            # Merge base and sweep overrides
+            trial_cfg = dict(base_cfg)
+            trial_cfg.update(overrides)
+            
+            config_path = experiment_dir / "subconfigs" / f"{job_id}.yml"
+            log_out = experiment_dir / "logs" / f"{job_id}.out"
+            log_err = experiment_dir / "logs" / f"{job_id}.err"
+            
+            with open(config_path, "w") as sc:
+                yaml.safe_dump(trial_cfg, sc, sort_keys=False)
+            
             node_arg = f"-w {random.choice(nodes_list)} " if nodes_list else ""
+            
             cmd = (
                 f"sbatch -A bml -p bml {node_arg}"
-                f"-o {spec['log'].resolve()} -e {spec['log'].resolve()} "
-                f"{worker_script} {spec['config'].resolve()} {spec['output'].resolve()}"
+                f"-o {log_out} -e {log_err} "
+                f"{worker_script} {experiment_dir} {job_id} {config_path}"
             )
             f.write(f"{cmd}\n")
 
     runner_path.chmod(0o755)
     print(f"Created experiment directory: {experiment_dir}")
-    print(f"Generated {len(subrun_specs)} subconfigs.")
+    print(f"Generated {len(overrides_list)} subconfigs.")
     print(f"Slurm runner script: {runner_path}")
 
 if __name__ == "__main__":
