@@ -25,4 +25,4 @@ conda activate env
 
 # Run experiment
 # output_json is resolved internally by fit_grum.py using trial_id and exp_dir
-python scripts/fit_grum.py --config "$CONFIG_PATH"
+python experiments/fit_grum.py --config "$CONFIG_PATH"

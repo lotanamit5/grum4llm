@@ -19,5 +19,5 @@ source "$(conda info --base)/etc/profile.d/conda.sh"
 conda activate env
 
 echo "Dispatching Asymptotic Orchestrator pipelines..."
-python scripts/run_experiment_orchestration.py --config configs/repro/asymptotic_orchestration.yml
+python experiments/run_experiment_orchestration.py --config configs/repro/asymptotic_orchestration.yml
 echo "Successfully launched Asymptotic reproduction metrics."

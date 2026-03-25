@@ -19,5 +19,5 @@ source "$(conda info --base)/etc/profile.d/conda.sh"
 conda activate env
 
 echo "Dispatching Elicitation Orchestrator pipelines..."
-python scripts/run_experiment_orchestration.py --config configs/repro/elicitation_orchestration.yml
+python experiments/run_experiment_orchestration.py --config configs/repro/elicitation_orchestration.yml
 echo "Successfully launched Elicitation reproduction metrics."
