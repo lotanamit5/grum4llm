@@ -43,7 +43,10 @@ def main():
     # 4. Generate Subconfigs & Runner
     nodes_list = [n.strip() for n in args.nodes.split(",") if n.strip()] if args.nodes else []
     runner_path = paths.root / "slurm_runner.sh"
-    worker_script = Path("scripts/worker_slurm.sh").resolve()
+    
+    # Read worker_script from config or default to scripts/worker_slurm.sh
+    worker_script_rel = experiment_cfg.get("worker_script", "scripts/worker_slurm.sh")
+    worker_script = (ROOT / worker_script_rel).resolve()
     
     with open(runner_path, "w") as f:
         f.write("#!/usr/bin/env bash\n\n")

@@ -6,6 +6,7 @@ DOMAINS_DIR = ROOT / "configs" / "llm" / "domains"
 
 DOMAIN_ALIASES = {
     "colors": DOMAINS_DIR / "colors.json",
+    "colors_pairwise": DOMAINS_DIR / "colors_pairwise.json",
 }
 
 def load_domain(domain_name: str) -> dict:
