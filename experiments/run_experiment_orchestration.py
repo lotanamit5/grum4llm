@@ -76,5 +76,10 @@ def main():
     print(f"Generated {len(overrides_list)} subconfigs.")
     print(f"Slurm runner script: {runner_path}")
 
+    # Run the slurm_runner.sh script
+    import subprocess
+    print(f"\nLaunching jobs with: bash {runner_path}")
+    subprocess.run(["bash", str(runner_path)], check=True)
+
 if __name__ == "__main__":
     main()

@@ -9,8 +9,6 @@
 set -e
 set -o pipefail
 
-cd "$SLURM_SUBMIT_DIR"
-
 export OMP_NUM_THREADS=1
 export OPENBLAS_NUM_THREADS=1
 export MKL_NUM_THREADS=1
