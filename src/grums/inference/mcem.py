@@ -68,11 +68,16 @@ class MCEMInference:
         observations: list[Observation],
         agent_features: Tensor,
         alternative_features: Tensor,
+        fit_bt: bool = False,
     ) -> MCEMResult:
         params = GRUMParameters(
             delta=initial_params.delta.to(self.device),
             interaction=initial_params.interaction.to(self.device)
         )
+        if fit_bt:
+            # Force B=0 for Bradley-Terry baseline
+            params.interaction.zero_()
+        
         alternative_features = alternative_features.to(self.device)
         
         # Consolidation logic: group observations by unique agent_id
@@ -100,7 +105,9 @@ class MCEMInference:
         converged = False
         for step in range(1, self.config.n_iterations + 1):
             s = self._e_step(params, adj_upper, adj_lower, consolidated_features, alternative_features)
-            new_params = self._m_step(s, params, consolidated_features, alternative_features)
+            new_params = self._m_step(
+                s, params, consolidated_features, alternative_features, fit_bt=fit_bt
+            )
 
             q_val = self._q_objective(s, new_params, consolidated_features, alternative_features)
             objective_trace.append(float(q_val))
@@ -192,6 +199,7 @@ class MCEMInference:
         prev_params: GRUMParameters,
         agent_features: Tensor,
         alternative_features: Tensor,
+        fit_bt: bool = False,
     ) -> GRUMParameters:
         sigma2 = self.config.sigma**2
         lam = self.config.prior_precision
@@ -220,6 +228,8 @@ class MCEMInference:
         
         b_vec = torch.linalg.solve(lhs, rhs)
         b_matrix = b_vec.view(k, l)
+        if fit_bt:
+            b_matrix.zero_()
 
         return GRUMParameters(delta=delta, interaction=b_matrix)
 

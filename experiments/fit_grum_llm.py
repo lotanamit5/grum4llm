@@ -14,7 +14,7 @@ SRC = ROOT / "src"
 if str(SRC) not in sys.path:
     sys.path.insert(0, str(SRC))
 
-from grums.contracts import AgentRecord, AlternativeRecord, PairwiseObservation
+from grums.contracts import AgentRecord, AlternativeRecord, PairwiseObservation, Observation
 from grums.core.parameters import GRUMParameters
 from grums.elicitation import (
     AdaptiveElicitationEngine,
@@ -134,12 +134,36 @@ def main():
     from tqdm import tqdm
     pbar = tqdm(total=steps, desc="Elicitation Rounds")
 
-    def _on_after_map(n_obs: int, params: GRUMParameters) -> None:
-        # We don't have true params for real LLMs, but we can track the estimated delta
+    def _on_after_map(n_obs: int, params: GRUMParameters, obs_list: list[Observation], lookup: dict[str, AgentRecord]) -> None:
+        # 1. Store GRUM params
         tau_by_n[n_obs] = {
-            "delta": params.delta.cpu().tolist(),
-            "interaction": params.interaction.cpu().tolist()
+            "grum": {
+                "delta": params.delta.cpu().tolist(),
+                "interaction": params.interaction.cpu().tolist()
+            }
         }
+        
+        # 2. Fit Bradley-Terry (B=0) on same observations
+        # We need to construct agent_features from the observations and lookup
+        aligned_agents = [lookup[o.agent_id] for o in obs_list]
+        curr_agent_features = torch.vstack([a.features for a in aligned_agents]).to(device).to(torch.float64)
+        
+        # Ensure alt features are correctly stacked/sorted
+        alts_sorted = sorted(alternatives, key=lambda a: a.alternative_id)
+        curr_alt_features = torch.vstack([a.features for a in alts_sorted]).to(device).to(torch.float64)
+        
+        bt_fit = engine.inference.fit_map(
+            initial_params=init_params,
+            observations=obs_list,
+            agent_features=curr_agent_features,
+            alternative_features=curr_alt_features,
+            fit_bt=True
+        )
+        
+        tau_by_n[n_obs]["bt"] = {
+            "delta": bt_fit.params.delta.cpu().tolist()
+        }
+        
         if n_obs > 1: # We don't update on the seed init (n_obs=1)
             pbar.update(1)
 

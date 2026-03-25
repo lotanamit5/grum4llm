@@ -67,7 +67,7 @@ class AdaptiveElicitationEngine:
         alternatives: list[AlternativeRecord],
         n_rounds: int,
         *,
-        on_after_map: Callable[[int, GRUMParameters], None] | None = None,
+        on_after_map: Callable[[int, GRUMParameters, list[Observation], dict[str, AgentRecord]], None] | None = None,
     ) -> AdaptiveElicitationResult:
         if len(initial_observations) == 0:
             raise ValueError("initial_observations must not be empty")
@@ -105,7 +105,7 @@ class AdaptiveElicitationEngine:
             params = fit.params
 
             if on_after_map is not None:
-                on_after_map(len(observations), params)
+                on_after_map(len(observations), params, list(observations), dict(observed_lookup))
 
             obs_fisher = observed_fisher_information(
                 params,
@@ -166,7 +166,7 @@ class AdaptiveElicitationEngine:
             params = final_fit.params
 
             if on_after_map is not None:
-                on_after_map(len(observations), params)
+                on_after_map(len(observations), params, list(observations), dict(observed_lookup))
 
         return AdaptiveElicitationResult(
             final_params=params,
