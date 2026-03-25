@@ -18,6 +18,14 @@ export MKL_NUM_THREADS=1
 source "$(conda info --base)/etc/profile.d/conda.sh"
 conda activate env
 
+NODES=""
+while getopts "w:" opt; do
+  case $opt in
+    w) NODES="$OPTARG" ;;
+    *) echo "Usage: $0 [-w nodes]"; exit 1 ;;
+  esac
+done
+
 echo "Dispatching Elicitation Orchestrator pipelines..."
-python experiments/run_experiment_orchestration.py --config configs/repro/elicitation_orchestration.yml
+python experiments/run_experiment_orchestration.py --config configs/repro/elicitation_orchestration.yml --nodes "$NODES"
 echo "Successfully launched Elicitation reproduction metrics."
