@@ -1,0 +1,61 @@
+{
+  "orchestration_config": "/home/lotan.amit/grum4llm/configs/repro/elicitation_orchestration.yml",
+  "run_dir": "/home/lotan.amit/grum4llm/results/repro/elicitation_repro-20260324-151849",
+  "run_prefix": "elicitation_repro",
+  "started_at_utc": "2026-03-24T15:18:50+00:00",
+  "worker_script": "/home/lotan.amit/grum4llm/scripts/fit_grum.py",
+  "max_parallel_subprocesses": null,
+  "aggregations": [
+    "criteria_curve",
+    "timing"
+  ],
+  "seed_values": [
+    0,
+    1,
+    2,
+    3,
+    4,
+    5,
+    6,
+    7,
+    8,
+    9,
+    10,
+    11,
+    12,
+    13,
+    14,
+    15,
+    16,
+    17,
+    18,
+    19,
+    20,
+    21,
+    22,
+    23,
+    24,
+    25,
+    26,
+    27,
+    28,
+    29
+  ],
+  "sweep_parameters": {
+    "dataset": [
+      "ds1",
+      "ds2",
+      "sushi"
+    ],
+    "criterion": [
+      "social",
+      "personalized",
+      "random",
+      "d_opt",
+      "e_opt"
+    ]
+  },
+  "subruns": [],
+  "finished_at_utc": "2026-03-24T15:18:58+00:00",
+  "status": "slurm_array_generated"
+}

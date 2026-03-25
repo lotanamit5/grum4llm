@@ -1,0 +1,10 @@
+steps: 90
+checkpoints: 1
+mcem:
+  n_iterations: 8
+  n_gibbs_samples: 30
+  n_gibbs_burnin: 15
+dataset: ds1
+criterion: d_opt
+seed: 22
+output_json: /home/lotan.amit/grum4llm/results/repro/elicitation_repro-20260324-151849/outputs/run_112_seed_22_dataset_ds1_criterion_d_opt.json

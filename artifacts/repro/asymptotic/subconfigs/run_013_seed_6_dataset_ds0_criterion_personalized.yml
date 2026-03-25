@@ -1,0 +1,12 @@
+steps: 500
+checkpoints: 50
+query_type: full
+mcem:
+  n_iterations: 8
+  n_gibbs_samples: 30
+  n_gibbs_burnin: 15
+seed: 6
+dataset: ds0
+criterion: personalized
+trial_id: run_013_seed_6_dataset_ds0_criterion_personalized
+exp_dir: /home/lotan.amit/grum4llm/results/repro/asymptotic_repro-20260325-131417

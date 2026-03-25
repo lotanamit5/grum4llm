@@ -1,0 +1,10 @@
+steps: 90
+checkpoints: 1
+mcem:
+  n_iterations: 8
+  n_gibbs_samples: 30
+  n_gibbs_burnin: 15
+dataset: ds2
+criterion: random
+seed: 17
+output_json: /home/lotan.amit/grum4llm/results/repro/elicitation_repro-20260324-151849/outputs/run_227_seed_17_dataset_ds2_criterion_random.json
