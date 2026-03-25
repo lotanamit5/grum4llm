@@ -6,7 +6,7 @@ import re
 import torch
 from typing import Any
 
-from grums.contracts import AgentRecord, AlternativeRecord, PreferenceProvider, RankingObservation
+from grums.contracts import AgentRecord, AlternativeRecord, PreferenceProvider, RankingObservation, PairwiseObservation
 
 
 class HuggingFaceProvider(PreferenceProvider):
@@ -49,39 +49,63 @@ class HuggingFaceProvider(PreferenceProvider):
         # We return negative loss to rank higher -> better (lower perplexity).
         return -outputs.loss.item()
 
-    def query_full_ranking(
+    def query_pairwise(
         self,
         agent: AgentRecord,
-        alternatives: list[AlternativeRecord],
-    ) -> RankingObservation:
+        alt_a: AlternativeRecord,
+        alt_b: AlternativeRecord,
+    ) -> PairwiseObservation:
+        """Elicit a pairwise comparison between two alternatives.
+        
+        Ranks by averaging negative perplexity across (A, B) and (B, A) prompt permutations.
+        """
         if agent.agent_id not in self._prompts_by_agent_id:
             raise KeyError(f"No prompt defined for agent_id: {agent.agent_id!r}")
             
-        system_prompt = self._prompts_by_agent_id[agent.agent_id]
+        template = self._prompts_by_agent_id[agent.agent_id]
+        text_a = self._alternative_texts.get(alt_a.alternative_id, str(alt_a.alternative_id))
+        text_b = self._alternative_texts.get(alt_b.alternative_id, str(alt_b.alternative_id))
         
-        scored_alts = []
-        for alt in alternatives:
-            alt_text = self._alternative_texts.get(alt.alternative_id, str(alt.alternative_id))
-            
-            if "{alternative}" in system_prompt:
-                raw_text = system_prompt.format(alternative=alt_text)
-            else:
-                raw_text = f"{system_prompt}{alt_text}"
-                
-            if getattr(self._tokenizer, "chat_template", None) is not None:
-                messages = [{"role": "user", "content": raw_text}]
-                text_to_score = self._tokenizer.apply_chat_template(messages, tokenize=False)
-            else:
-                text_to_score = raw_text
-                
-            neg_ppl = self._compute_negative_perplexity(text_to_score)
-            scored_alts.append((neg_ppl, alt.alternative_id))
-            
-        # Sort descending by negative perplexity (highest value = lowest perplexity = top rank)
-        scored_alts.sort(key=lambda x: x[0], reverse=True)
-        ranking = tuple(alt_id for _, alt_id in scored_alts)
+        # We compute scores for choice A and choice B across both permutations
+        # Permutation 1: A=text_a, B=text_b
+        # Permutation 2: A=text_b, B=text_a
         
-        return RankingObservation(
+        def get_score(prompt_a, prompt_b, choice_text):
+            # If the template doesn't have {A}/{B}, we just append choice_text as before
+            # but usually it will have them now.
+            t1 = prompt_a.format(A=text_a, B=text_b) if "{A}" in prompt_a else f"{prompt_a}{choice_text}"
+            t2 = prompt_b.format(A=text_b, B=text_a) if "{A}" in prompt_b else f"{prompt_b}{choice_text}"
+            
+            # Note: For the permutation cases, we need to be careful if choice_text 
+            # is one of the placeholders. 
+            # In Permutation 1 (A=text_a, B=text_b), if user chooses text_a, 
+            # the full string is template.format(A=text_a, B=text_b) + text_a
+            
+            s1 = self._score_text(t1, choice_text)
+            s2 = self._score_text(t2, choice_text)
+            return (s1 + s2) / 2.0
+
+        score_a = get_score(template, template, text_a)
+        score_b = get_score(template, template, text_b)
+        
+        winner_id = alt_a.alternative_id if score_a > score_b else alt_b.alternative_id
+        loser_id = alt_b.alternative_id if winner_id == alt_a.alternative_id else alt_a.alternative_id
+        
+        return PairwiseObservation(
             agent_id=agent.agent_id,
-            ranking=ranking,
+            winner_id=winner_id,
+            loser_id=loser_id,
         )
+
+    def _score_text(self, base_prompt: str, choice_text: str) -> float:
+        """Score a choice by the negative perplexity of the full string."""
+        full_text = f"{base_prompt}{choice_text}"
+        
+        if getattr(self._tokenizer, "chat_template", None) is not None:
+            # We assume the base_prompt + choice is the final response
+            messages = [{"role": "user", "content": full_text}]
+            text_to_score = self._tokenizer.apply_chat_template(messages, tokenize=False)
+        else:
+            text_to_score = full_text
+            
+        return self._compute_negative_perplexity(text_to_score)
