@@ -3,7 +3,6 @@
 
 import argparse
 import yaml
-import itertools
 from pathlib import Path
 from datetime import datetime, timezone
 import random
@@ -59,27 +58,30 @@ def main():
         f.write(f"# Total runs: {len(overrides_list)}\n\n")
         
         for i, overrides in enumerate(overrides_list):
-            # Unique identification for this trial
+            # Unique identification for this trial (Trial ID)
             suffix = "_".join(f"{k}_{v}" for k, v in overrides.items())
-            job_id = f"run_{i:03d}_{suffix}" if suffix else f"run_{i:03d}"
+            trial_id = f"run_{i:03d}_{suffix}" if suffix else f"run_{i:03d}"
             
             # Merge base and sweep overrides
             trial_cfg = dict(base_cfg)
             trial_cfg.update(overrides)
             
-            config_path = experiment_dir / "subconfigs" / f"{job_id}.yml"
-            log_out = experiment_dir / "logs" / f"{job_id}.out"
-            log_err = experiment_dir / "logs" / f"{job_id}.err"
+            config_path = experiment_dir / "subconfigs" / f"{trial_id}.yml"
+            
+            # We use %j in the log filename so Slurm appends its numeric Job ID
+            log_out = experiment_dir / "logs" / f"{trial_id}_%j.out"
+            log_err = experiment_dir / "logs" / f"{trial_id}_%j.err"
             
             with open(config_path, "w") as sc:
                 yaml.safe_dump(trial_cfg, sc, sort_keys=False)
             
             node_arg = f"-w {random.choice(nodes_list)} " if nodes_list else ""
             
+            # We pass the trial_id to the worker script so it can name the output JSON
             cmd = (
                 f"sbatch -A bml -p bml {node_arg}"
                 f"-o {log_out} -e {log_err} "
-                f"{worker_script} {experiment_dir} {job_id} {config_path}"
+                f"{worker_script} {experiment_dir} {trial_id} {config_path}"
             )
             f.write(f"{cmd}\n")
 
