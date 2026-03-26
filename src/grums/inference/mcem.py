@@ -251,9 +251,12 @@ class MCEMInference:
         if fit_bt:
             b_matrix.zero_()
 
-        # Enforce Identifiability: Sum-to-zero constraint on delta
-        # This prevents the global origin drift observed in unbounded runs
+        # Enforce Identifiability: 
+        # 1. Sum-to-zero constraint on delta (prevents global origin drift)
         delta = delta - delta.mean()
+        # 2. Sum-to-zero constraint on B columns (prevents global bias in interaction term)
+        # This makes B represent relative preference differences driven by features.
+        b_matrix = b_matrix - b_matrix.mean(dim=1, keepdim=True)
 
         return GRUMParameters(delta=delta, interaction=b_matrix)
 
