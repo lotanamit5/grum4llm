@@ -58,7 +58,8 @@ def expand_sweep(sweep_cfg: dict[str, Any]) -> list[dict[str, Any]]:
 
 def get_trial_id(index: int, overrides: dict[str, Any]) -> str:
     """Generates a unique, parameter-descriptive trial ID."""
-    suffix = "_".join(f"{k}_{v}" for k, v in overrides.items())
+    # Sanitize values to avoid invalid filesystem paths (e.g. slashes in model IDs)
+    suffix = "_".join(f"{k}_{str(v).replace('/', '-')}" for k, v in overrides.items())
     return f"run_{index:03d}_{suffix}" if suffix else f"run_{index:03d}"
 
 def create_trial_config(
