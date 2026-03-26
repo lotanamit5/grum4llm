@@ -1,0 +1,13 @@
+domain: colors_pairwise
+steps: 500
+pca_dim: 8
+mcem:
+  n_iterations: 8
+  n_gibbs_samples: 30
+  n_gibbs_burnin: 15
+seed: 42
+criterion: random
+model_id: Qwen/Qwen2.5-0.5B
+embedding_method: hidden_state_pca
+trial_id: run_009_criterion_random_model_id_Qwen-Qwen2.5-0.5B_embedding_method_hidden_state_pca
+exp_dir: /home/lotan.amit/grum4llm/results/llm/llm_colors-20260326-114531
