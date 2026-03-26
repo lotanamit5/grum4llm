@@ -125,7 +125,7 @@ def main():
             model = AutoModelForCausalLM.from_pretrained(
                 model_id, 
                 device_map="auto", 
-                torch_dtype=torch.float16 if device.type == "cuda" else torch.float32
+                dtype=torch.float16 if device.type == "cuda" else torch.float32
             )
 
     rng = np.random.default_rng(seed)

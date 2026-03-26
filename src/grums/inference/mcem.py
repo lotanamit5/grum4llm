@@ -101,7 +101,12 @@ class MCEMInference:
         n_alts = int(params.n_alternatives)
         
         # Identifiability Check: Condition 1 (Strong Connectivity)
-        rankings = [tuple(o.ranking) for o in observations]
+        def _get_ranking(o: Observation) -> tuple[int, ...]:
+            if hasattr(o, "ranking"):
+                return o.ranking  # type: ignore
+            return (o.winner_id, o.loser_id)  # type: ignore
+
+        rankings = [_get_ranking(o) for o in observations]
         if not satisfies_connectivity_condition(rankings, n_alts):
             logging.warning(
                 "Condition 1 (Strong Connectivity) not satisfied. "
