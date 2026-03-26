@@ -1,0 +1,14 @@
+# Minimal smoke test config for fit_grum_llm.py (Dummy Model)
+domain: "colors_pairwise"
+criterion: "social"
+steps: 2
+seed: 42
+pca_dim: 2
+embedding_method: "random"
+provider:
+  method: "llm_stub"
+device: "cpu"
+mcem:
+  n_iterations: 2
+  n_gibbs_samples: 5
+  n_gibbs_burnin: 2

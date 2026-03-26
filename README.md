@@ -2,6 +2,23 @@
 
 A provider-agnostic GRUM package for preference elicitation.
 
+## Installation
+
+### 1. Create Conda Environment
+Create a new environment using the provided `environment.yml` file:
+
+```bash
+conda env create -f environment.yml
+conda activate env
+```
+
+### 2. Install Package
+[Optional] Install the project in editable mode with development dependencies:
+
+```bash
+pip install -e ".[dev]"
+```
+
 ## Architecture boundary
 
 - `grums.core`: model and inference logic (domain core).
@@ -15,37 +32,48 @@ The core package must never import model-specific provider code.
 Run tests:
 
 ```bash
-/home/lotanamit/miniconda3/envs/env/bin/python -m pytest
+pytest
 ```
 
-## Quick experiment script
+## Quick Start (Smoke Test)
 
-Run a social-choice synthetic experiment end-to-end:
+Verify your installation by running a minimal experiment (Dummy Mode):
 
 ```bash
-/home/lotanamit/miniconda3/envs/env/bin/python scripts/run_social_choice_experiment.py \
-	--mode both \
-	--agent-counts 10,20,30 \
-	--rounds 20 \
-	--repeats 3 \
-	--n-jobs 32 \
-	--seed 0 \
-	--output-json results_social_choice.json
+bash scripts/run_smoke_test.sh
 ```
 
-Paper-style reproduction uses orchestration configs under `configs/repro/` and SLURM drivers under `scripts/slurm_figure*.sh`; see [docs/repro_figure_scripts.md](docs/repro_figure_scripts.md).
+## Experiment Execution
 
-Quick smoke (no YAML file):
+The pipeline supports two execution modes: **Local** (sequential) and **Orchestrated** (SLURM-based parallel).
+
+### 1. Local Execution (Recommended for Testing)
+Use `fit_grum_llm.py` with the `--dummy` flag for fast local validation.
 
 ```bash
-python scripts/run_social_choice_experiment.py \
-	--mode asymptotic \
-	--agent-counts 5,10 \
-	--repeats 1 \
-	--iterations 0 \
-	--no-progress \
-	--output-json results/smoke_social.json
+python experiments/fit_grum_llm.py --config configs/smoke_test.yml --dummy
 ```
+
+### 2. Orchestrated Execution (SLURM)
+Use `run_experiment_orchestration.py` (via shell scripts) to dispatch a sweep of trials as individual SLURM jobs.
+
+```bash
+# Example: LLM Color Preference experiment
+bash scripts/run_llm_colors.sh
+
+# Example: Asymptotic reproduction experiment
+bash scripts/run_asymptotic_repro.sh
+```
+
+## Paper Reproduction
+
+Reproduction scripts for the paper use orchestration configs under `configs/repro/`:
+
+```bash
+bash scripts/run_asymptotic_repro.sh
+bash scripts/run_elicitation_repro.sh
+```
+
 
 Notes:
 
