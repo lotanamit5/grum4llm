@@ -17,3 +17,5 @@ base:
 
 sweep:
   criterion: ["social", "personalized", "random"]
+  embedding_method: ["hidden_state_pca", "sentence_transformer_pca"]
+  model_id: ["Qwen/Qwen2.5-0.5B", "Qwen/Qwen2.5-0.5B-Instruct"]

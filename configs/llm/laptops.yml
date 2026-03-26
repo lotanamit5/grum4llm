@@ -16,3 +16,5 @@ base:
 
 sweep:
   criterion: ["social", "personalized", "random"]
+  model_id: ["Qwen/Qwen2.5-0.5B", "Qwen/Qwen2.5-0.5B-Instruct"]
+  embedding_method: ["hybrid_onehot_pca", "hidden_state_pca"]

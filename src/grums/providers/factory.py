@@ -13,9 +13,13 @@ from grums.providers.oracle import OracleRankingProvider
 def build_preference_provider(
     kind: Literal["oracle", "llm_stub", "huggingface"],
     *,
+    method: Literal["perplexity", "labels"] = "perplexity",
+    labels: tuple[str, str] = ("1", "2"),
     ranking_by_agent_id: dict[str, tuple[int, ...]] | None = None,
     model: Any = None,
     tokenizer: Any = None,
+    model_id: str | None = None,
+    device: str = "auto",
     prompts_by_agent_id: dict[str, str] | None = None,
     alternative_texts: dict[int, str] | None = None,
 ) -> PreferenceProvider:
@@ -26,8 +30,15 @@ def build_preference_provider(
     if kind == "llm_stub":
         return StubLLMPreferenceProvider()
     if kind == "huggingface":
+        if method == "labels":
+            if model_id is None:
+                raise ValueError("labels method requires model_id")
+            from grums.providers.huggingface import HuggingFaceChoiceProvider
+            return HuggingFaceChoiceProvider(model_id=model_id, device=device, labels=labels)
+        
         if model is None or tokenizer is None or prompts_by_agent_id is None:
-            raise ValueError("huggingface provider requires model, tokenizer, and prompts_by_agent_id")
+            raise ValueError("huggingface perplexity method requires model, tokenizer, and prompts_by_agent_id")
+            
         return HuggingFaceProvider(
             model=model, 
             tokenizer=tokenizer, 

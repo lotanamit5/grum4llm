@@ -27,7 +27,7 @@ if [ -z "$CONFIG_PATH" ]; then
     exit 1
 fi
 
-echo "Starting GRUM Laptop Worker with config: $CONFIG_PATH"
-python experiments/fit_grum_laptops.py --config "$CONFIG_PATH"
+echo "Starting Generalized GRUM LLM Worker with config: $CONFIG_PATH"
+python experiments/fit_grum_llm.py --config "$CONFIG_PATH"
 
 echo "Worker finished successfully."

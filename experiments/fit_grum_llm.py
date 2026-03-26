@@ -8,6 +8,7 @@ from pathlib import Path
 from datetime import datetime, timezone
 import sys
 import time
+from tqdm import tqdm
 
 ROOT = Path(__file__).resolve().parents[1]
 SRC = ROOT / "src"
@@ -20,10 +21,22 @@ from grums.elicitation import (
     AdaptiveElicitationEngine,
     PairwiseDesign,
 )
-from grums.providers import HuggingFaceProvider, MockHuggingFaceProvider
+from grums.providers.factory import build_preference_provider
 import utils
-from grums.experiments.metrics import social_choice_kendall_tau
 from grums.experiments.domains import load_domain, get_agent_features
+
+def normalize_features(features: np.ndarray, cols: list[int]) -> np.ndarray:
+    """Applies Min-Max normalization to specified numeric columns."""
+    norm_features = features.copy().astype(float)
+    for col in cols:
+        if col < norm_features.shape[1]:
+            min_val = norm_features[:, col].min()
+            max_val = norm_features[:, col].max()
+            if max_val > min_val:
+                norm_features[:, col] = (norm_features[:, col] - min_val) / (max_val - min_val)
+            else:
+                norm_features[:, col] = 0.0
+    return norm_features
 
 def main():
     parser = argparse.ArgumentParser()
@@ -43,6 +56,8 @@ def main():
     seed = cfg.get("seed", 42)
     pca_dim = cfg.get("pca_dim", 8)
     embedding_method = cfg.get("embedding_method", "hidden_state_pca")
+    provider_method = cfg.get("provider", {}).get("method", "perplexity")
+    provider_labels = cfg.get("provider", {}).get("labels", ("1", "2"))
     
     mcem_config = utils.get_mcem_config(cfg.get("mcem", {}))
     device = utils.get_torch_device(cfg.get("device", "auto"))
@@ -52,68 +67,113 @@ def main():
     item_names = domain_data["alternatives"]
     alternative_texts = {i: name for i, name in enumerate(item_names)}
     
-    # Simple one-hot features for alternatives
+    # Alternative Features
     m = len(item_names)
-    alt_z = np.eye(m)
-    alternatives = [AlternativeRecord(alternative_id=i, features=torch.from_numpy(alt_z[i]).to(device).to(torch.float64)) for i in range(m)]
-    
+    if "alternative_features" in domain_data:
+        alt_features = np.array(domain_data["alternative_features"])
+        # Apply normalization if it's the laptops domain (hardcoded for now as per previous logic)
+        if "laptops" in domain_name:
+            alt_features = normalize_features(alt_features, [5, 6, 7])
+        alternatives = [
+            AlternativeRecord(i, torch.from_numpy(alt_features[i]).to(device).float())
+            for i in range(m)
+        ]
+        # Inject descriptions for formatting
+        for i, alt in enumerate(alternatives):
+            object.__setattr__(alt, "description", item_names[i])
+    else:
+        # Default to one-hot if no features provided
+        alt_features = np.eye(m)
+        alternatives = [
+            AlternativeRecord(i, torch.from_numpy(alt_features[i]).to(device).float())
+            for i in range(m)
+        ]
+
+    # Agent Processing
     prompt_templates = domain_data["prompts"]
-    prompts_by_agent_id = {f"p_{i:02d}": t for i, t in enumerate(prompt_templates)}
-    agent_ids = sorted(list(prompts_by_agent_id.keys()))
+    personas = domain_data.get("personas")
+    
+    agent_ids = []
+    prompts_by_agent_id = {}
+    
+    if personas:
+        # Hybrid agent structure (Persona x Template)
+        persona_ids = sorted(list(personas.keys()))
+        for pid in persona_ids:
+            for t_idx, template in enumerate(prompt_templates):
+                aid = f"{pid}_t{t_idx}"
+                agent_ids.append(aid)
+                # Final prompt combines Persona text and Template
+                prompts_by_agent_id[aid] = template.replace("{PERSONA}", personas[pid])
+    else:
+        # Standard agent structure (Template only)
+        for i, t in enumerate(prompt_templates):
+            aid = f"p_{i:02d}"
+            agent_ids.append(aid)
+            prompts_by_agent_id[aid] = t
+    
+    agent_ids = sorted(agent_ids)
 
     # 3. Initialize Model and Extract Agent Features
     model = None
     tokenizer = None
-    if not args.dummy:
+    if not args.dummy and (embedding_method != "random" or provider_method != "llm_stub"):
         from transformers import AutoModelForCausalLM, AutoTokenizer
         print(f"Loading model: {model_id}")
         tokenizer = AutoTokenizer.from_pretrained(model_id)
-        model = AutoModelForCausalLM.from_pretrained(
-            model_id, 
-            device_map="auto", 
-            torch_dtype=torch.float16 if device.type == "cuda" else torch.float32
-        )
+        if provider_method == "perplexity" or embedding_method == "hidden_state_pca":
+            model = AutoModelForCausalLM.from_pretrained(
+                model_id, 
+                device_map="auto", 
+                torch_dtype=torch.float16 if device.type == "cuda" else torch.float32
+            )
 
     rng = np.random.default_rng(seed)
-    # get_agent_features will handle dummy mode internally for embedding fallback
     x = get_agent_features(
         embedding_method, 
         agent_ids, 
-        prompts_by_agent_id, 
+        prompts_by_agent_id if not personas else {aid: prompt_templates[int(aid.split("_t")[1])] for aid in agent_ids}, 
         model, 
         tokenizer, 
         rng, 
         dummy=args.dummy, 
         seed=seed,
-        pca_dim=pca_dim
+        pca_dim=pca_dim,
+        personas=personas
     )
-    agents = [AgentRecord(agent_id=aid, features=torch.from_numpy(x[i]).to(device).to(torch.float64)) for i, aid in enumerate(agent_ids)]
+    agents = [
+        AgentRecord(aid, torch.from_numpy(x[i]).to(device).float())
+        for i, aid in enumerate(agent_ids)
+    ]
+    # Inject final prompts for provider
+    for agent in agents:
+        object.__setattr__(agent, "prompt", prompts_by_agent_id[agent.agent_id])
 
     # 4. Initialize Provider
-    if args.dummy:
-        provider = MockHuggingFaceProvider(
-            prompts_by_agent_id=prompts_by_agent_id,
-            alternative_texts=alternative_texts
-        )
-    else:
-        provider = HuggingFaceProvider(
-            model=model,
-            tokenizer=tokenizer,
-            prompts_by_agent_id=prompts_by_agent_id,
-            alternative_texts=alternative_texts
-        )
+    kind = "llm_stub" if args.dummy else "huggingface"
+    provider = build_preference_provider(
+        kind,
+        method=provider_method,
+        labels=provider_labels,
+        model=model,
+        tokenizer=tokenizer,
+        model_id=model_id,
+        device=device.type,
+        prompts_by_agent_id=prompts_by_agent_id,
+        alternative_texts=alternative_texts
+    )
 
     # 5. Elicitation Setup
-    k = pca_dim
-    l = m # dimension of alternative features (one-hot)
+    k = agents[0].features.shape[0]
+    l = alternatives[0].features.shape[0]
     
-    print(f"\n[INFO] Starting LLM Elicitation Experiment")
+    print(f"\n[INFO] Starting Generalized LLM Elicitation")
     print(f"       Model:      {model_id}")
     print(f"       Domain:     {domain_name}")
     print(f"       Criterion:  {criterion_name}")
+    print(f"       Embedding:  {embedding_method}")
+    print(f"       Provider:   {provider_method}")
     print(f"       Steps:      {steps}")
-    print(f"       Seed:       {seed}")
-    print(f"       PCA Dim:    {pca_dim}")
 
     criteria = utils.get_criteria_map(
         m, k, l, seed, 
@@ -124,18 +184,14 @@ def main():
 
     init_params = utils.get_init_params(m, k, l, device)
 
-    # Initial seed observation (first agent compared to first two alternatives)
+    # Initial seed observation
     seed_obs = provider.query_pairwise(agents[0], alternatives[0], alternatives[1])
-    print(f"[INFO] Seed Obs: Agent {agents[0].agent_id} preferred {alternative_texts[seed_obs.winner_id]} over {alternative_texts[seed_obs.loser_id]}")
-
+    
     # 6. Run Engine
     tau_by_n = {}
-    
-    from tqdm import tqdm
     pbar = tqdm(total=steps, desc="Elicitation Rounds")
 
     def _on_after_map(n_obs: int, params: GRUMParameters, obs_list: list[Observation], lookup: dict[str, AgentRecord]) -> None:
-        # 1. Store GRUM params
         tau_by_n[n_obs] = {
             "grum": {
                 "delta": params.delta.cpu().tolist(),
@@ -143,14 +199,9 @@ def main():
             }
         }
         
-        # 2. Fit Bradley-Terry (B=0) on same observations
-        # We need to construct agent_features from the observations and lookup
         aligned_agents = [lookup[o.agent_id] for o in obs_list]
         curr_agent_features = torch.vstack([a.features for a in aligned_agents]).to(device).to(torch.float64)
-        
-        # Ensure alt features are correctly stacked/sorted
-        alts_sorted = sorted(alternatives, key=lambda a: a.alternative_id)
-        curr_alt_features = torch.vstack([a.features for a in alts_sorted]).to(device).to(torch.float64)
+        curr_alt_features = torch.vstack([a.features for a in sorted(alternatives, key=lambda a: a.alternative_id)]).to(device).to(torch.float64)
         
         bt_fit = engine.inference.fit_map(
             initial_params=init_params,
@@ -160,14 +211,9 @@ def main():
             fit_bt=True
         )
         
-        tau_by_n[n_obs]["bt"] = {
-            "delta": bt_fit.params.delta.cpu().tolist()
-        }
-        
-        if n_obs > 1: # We don't update on the seed init (n_obs=1)
-            pbar.update(1)
+        tau_by_n[n_obs]["bt"] = {"delta": bt_fit.params.delta.cpu().tolist()}
+        if n_obs > 1: pbar.update(1)
 
-    # Candidate designs: all pairs for all candidate agents
     import itertools
     candidate_designs = []
     for agent in agents[1:]:
@@ -176,7 +222,6 @@ def main():
 
     engine = AdaptiveElicitationEngine(criterion=criterion, mcem_config=mcem_config)
     
-    print(f"\n[INFO] Running Adaptive Elicitation Pipeline...")
     t0 = time.perf_counter()
     engine.run(
         provider=provider,
@@ -198,12 +243,10 @@ def main():
         "seed": seed,
         "steps": steps,
         "criterion": criterion_name,
+        "embedding_method": embedding_method,
         "pca_dim": pca_dim,
         "history": tau_by_n,
-        "timing": {
-            "total_seconds": t1 - t0,
-            "average_step_seconds": (t1 - t0) / steps if steps > 0 else 0
-        },
+        "timing": {"total_seconds": t1 - t0},
         "finished_at_utc": utils.get_utc_timestamp(),
     }
 
