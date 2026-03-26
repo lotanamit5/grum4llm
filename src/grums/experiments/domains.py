@@ -74,9 +74,18 @@ def get_agent_features(
                 embeddings.append(last_hidden)
                 
         embeddings = np.array(embeddings)
-        print(f"Applying PCA to reduce from {embeddings.shape[1]} to {pca_dim}...")
-        pca = PCA(n_components=pca_dim, random_state=seed)
+        n_samples = len(embeddings)
+        actual_pca_dim = min(pca_dim, n_samples)
+        print(f"Applying PCA to reduce from {embeddings.shape[1]} to {actual_pca_dim} (requested {pca_dim})...")
+        
+        pca = PCA(n_components=actual_pca_dim, random_state=seed)
         reduced_embeddings = pca.fit_transform(embeddings)
+
+        if actual_pca_dim < pca_dim:
+            # Pad with zeros to maintain consistent output dimension
+            padded = np.zeros((n_samples, pca_dim))
+            padded[:, :actual_pca_dim] = reduced_embeddings
+            reduced_embeddings = padded
 
         if embedding_method == "hidden_state_pca":
             return reduced_embeddings
@@ -111,11 +120,19 @@ def get_agent_features(
             
         print(f"Extracting embeddings using sentence-transformers for {N} agents...")
         st_model = SentenceTransformer("all-MiniLM-L6-v2")
-        texts = [prompts_by_agent_id[aid] for aid in agent_ids]
         embeddings = st_model.encode(texts)
+        n_samples = len(embeddings)
+        actual_pca_dim = min(pca_dim, n_samples)
         
-        print(f"Applying PCA to reduce from {embeddings.shape[1]} to {pca_dim}...")
-        pca = PCA(n_components=pca_dim, random_state=seed)
-        return pca.fit_transform(embeddings)
+        print(f"Applying PCA to reduce from {embeddings.shape[1]} to {actual_pca_dim} (requested {pca_dim})...")
+        pca = PCA(n_components=actual_pca_dim, random_state=seed)
+        reduced_embeddings = pca.fit_transform(embeddings)
+        
+        if actual_pca_dim < pca_dim:
+            padded = np.zeros((n_samples, pca_dim))
+            padded[:, :actual_pca_dim] = reduced_embeddings
+            return padded
+            
+        return reduced_embeddings
         
     raise ValueError(f"Unknown embedding method: {embedding_method}")
