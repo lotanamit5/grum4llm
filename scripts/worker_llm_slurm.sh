@@ -2,7 +2,7 @@
 #SBATCH -A bml
 #SBATCH -p bml
 #SBATCH --gres=gpu:1
-#SBATCH --cpus-per-task=16
+#SBATCH --cpus-per-task=8
 #SBATCH --mem=64G
 #SBATCH --time=24:00:00
 
@@ -14,9 +14,9 @@ set -o pipefail
 source "$(conda info --base)/etc/profile.d/conda.sh"
 conda activate env
 
-export OMP_NUM_THREADS=16
-export OPENBLAS_NUM_THREADS=16
-export MKL_NUM_THREADS=16
+export OMP_NUM_THREADS=8
+export OPENBLAS_NUM_THREADS=8
+export MKL_NUM_THREADS=8
 
 CONFIG_PATH=$1
 

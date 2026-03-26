@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-#SBATCH --cpus-per-task=16
+#SBATCH --cpus-per-task=8
 #SBATCH --mem=32G
 
 # SBATCH worker script for GRUMs fit_grum.py
@@ -14,10 +14,10 @@ fi
 
 CONFIG_PATH="$1"
 
-# Optimization: Match threads to allocated CPUs (16)
-export OMP_NUM_THREADS=16
-export OPENBLAS_NUM_THREADS=16
-export MKL_NUM_THREADS=16
+# Optimization: Match threads to allocated CPUs (8)
+export OMP_NUM_THREADS=8
+export OPENBLAS_NUM_THREADS=8
+export MKL_NUM_THREADS=8
 
 # Activate environment
 source "$(conda info --base)/etc/profile.d/conda.sh"
