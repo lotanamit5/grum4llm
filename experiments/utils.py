@@ -16,7 +16,7 @@ from grums.elicitation import (
     SocialChoiceCriterion,
     PersonalizedChoiceCriterion,
 )
-# TODO: we don't need 2 timestamp function, keep 'get_utc_timestamp' and remove 'get_utc_now_iso'
+
 def get_utc_timestamp(compact: bool = False) -> str:
     """Returns the current UTC time. ISO format by default, compact if requested."""
     now = datetime.now(timezone.utc)

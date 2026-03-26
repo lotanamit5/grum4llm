@@ -1,0 +1,18 @@
+experiment:
+  run_prefix: "llm_laptops"
+  output_root: "results/llm"
+  worker_script: "scripts/worker_laptops_slurm.sh"
+
+base:
+  model_id: "Qwen/Qwen2.5-0.5B"
+  domain: "laptops"
+  steps: 500
+  pca_dim: 8
+  mcem:
+    n_iterations: 8
+    n_gibbs_samples: 30
+    n_gibbs_burnin: 15
+  seed: 42
+
+sweep:
+  criterion: ["social", "personalized", "random"]
