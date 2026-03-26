@@ -84,6 +84,8 @@ def get_mcem_config(mcem_cfg: dict[str, Any]) -> MCEMConfig:
         n_iterations=mcem_cfg.get("n_iterations", 8),
         n_gibbs_samples=mcem_cfg.get("n_gibbs_samples", 30),
         n_gibbs_burnin=mcem_cfg.get("n_gibbs_burnin", 15),
+        connectivity_check_every=mcem_cfg.get("check_every", 1),
+        connectivity_start_at=mcem_cfg.get("start_at", 1),
     )
 
 def get_torch_device(config_device: str = "auto") -> torch.device:

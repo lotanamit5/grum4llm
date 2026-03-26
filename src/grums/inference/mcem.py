@@ -25,6 +25,8 @@ class MCEMConfig:
     prior_precision: float = 1e-2
     tolerance: float = 1e-5
     random_seed: int = 0
+    connectivity_check_every: int = 1
+    connectivity_start_at: int = 1
 
 
 @dataclass(frozen=True)
@@ -101,17 +103,19 @@ class MCEMInference:
         n_alts = int(params.n_alternatives)
         
         # Identifiability Check: Condition 1 (Strong Connectivity)
-        def _get_ranking(o: Observation) -> tuple[int, ...]:
-            if hasattr(o, "ranking"):
-                return o.ranking  # type: ignore
-            return (o.winner_id, o.loser_id)  # type: ignore
+        n_obs = len(observations)
+        if n_obs >= self.config.connectivity_start_at and (n_obs - self.config.connectivity_start_at) % self.config.connectivity_check_every == 0:
+            def _get_ranking(o: Observation) -> tuple[int, ...]:
+                if hasattr(o, "ranking"):
+                    return o.ranking  # type: ignore
+                return (o.winner_id, o.loser_id)  # type: ignore
 
-        rankings = [_get_ranking(o) for o in observations]
-        if not satisfies_connectivity_condition(rankings, n_alts):
-            logging.warning(
-                "Condition 1 (Strong Connectivity) not satisfied. "
-                "The MLE/MAP estimate may be unbounded."
-            )
+            rankings = [_get_ranking(o) for o in observations]
+            if not satisfies_connectivity_condition(rankings, n_alts):
+                logging.warning(
+                    f"Condition 1 (Strong Connectivity) not satisfied at step {n_obs}. "
+                    "The MLE/MAP estimate may be unbounded."
+                )
             
         adj_upper, adj_lower = self._compile_adjacencies(graph, unique_agent_ids, n_alts)
         
