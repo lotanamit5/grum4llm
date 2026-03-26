@@ -10,6 +10,8 @@ import torch
 from grums.contracts import Observation, compile_constraint_graph
 from grums.core.model_math import compute_mean_utilities
 from grums.core.parameters import GRUMParameters
+from grums.core.validations import satisfies_connectivity_condition
+import logging
 
 Tensor = torch.Tensor
 
@@ -97,6 +99,15 @@ class MCEMInference:
         ]).to(self.device)
         
         n_alts = int(params.n_alternatives)
+        
+        # Identifiability Check: Condition 1 (Strong Connectivity)
+        rankings = [tuple(o.ranking) for o in observations]
+        if not satisfies_connectivity_condition(rankings, n_alts):
+            logging.warning(
+                "Condition 1 (Strong Connectivity) not satisfied. "
+                "The MLE/MAP estimate may be unbounded."
+            )
+            
         adj_upper, adj_lower = self._compile_adjacencies(graph, unique_agent_ids, n_alts)
         
         objective_trace: list[float] = []
@@ -230,6 +241,10 @@ class MCEMInference:
         b_matrix = b_vec.view(k, l)
         if fit_bt:
             b_matrix.zero_()
+
+        # Enforce Identifiability: Sum-to-zero constraint on delta
+        # This prevents the global origin drift observed in unbounded runs
+        delta = delta - delta.mean()
 
         return GRUMParameters(delta=delta, interaction=b_matrix)
 
