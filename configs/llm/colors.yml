@@ -4,11 +4,9 @@ experiment:
   worker_script: "scripts/worker_llm_slurm.sh"
 
 base:
-  model_id: "Qwen/Qwen2.5-0.5B"
   domain: "colors_pairwise"
-  steps: 50
+  steps: 500
   pca_dim: 8
-  embedding_method: "hidden_state_pca"
   mcem:
     n_iterations: 8
     n_gibbs_samples: 30
@@ -17,5 +15,5 @@ base:
 
 sweep:
   criterion: ["social", "personalized", "random"]
-  embedding_method: ["hidden_state_pca", "sentence_transformer_pca"]
   model_id: ["Qwen/Qwen2.5-0.5B", "Qwen/Qwen2.5-0.5B-Instruct"]
+  embedding_method: ["sentence_transformer_pca", "hidden_state_pca"]

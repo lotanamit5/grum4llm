@@ -34,6 +34,6 @@ else
 fi
 
 echo "Dispatching LLM Colors Preference Elicitation Orchestrator..."
-python experiments/run_experiment_orchestration.py --config configs/llm/colors_hs.yml $NODE_ARG
+python experiments/run_experiment_orchestration.py --config configs/llm/colors.yml $NODE_ARG
 
 echo "Successfully launched LLM Colors experiment jobs."
