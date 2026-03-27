@@ -120,6 +120,7 @@ def get_agent_features(
             
         print(f"Extracting embeddings using sentence-transformers for {N} agents...")
         st_model = SentenceTransformer("all-MiniLM-L6-v2")
+        texts = [prompts_by_agent_id[aid] for aid in agent_ids]
         embeddings = st_model.encode(texts)
         n_samples = len(embeddings)
         actual_pca_dim = min(pca_dim, n_samples)
