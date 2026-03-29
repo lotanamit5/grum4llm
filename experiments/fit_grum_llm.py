@@ -220,8 +220,6 @@ def main():
         return total_nll / count if count > 0 else float("nan")
 
     def _on_after_map(n_obs: int, params: GRUMParameters, obs_list: list[Observation], lookup: dict[str, AgentRecord]) -> None:
-        nll = _compute_nll(params, obs_list, lookup)
-
         # Record the latest observation if this is a new step (n_obs > 1 means a new obs was added)
         if n_obs > len(query_log) + 1 or (n_obs == 1 and len(query_log) == 0):
             latest_obs = obs_list[-1] if obs_list else None
@@ -239,7 +237,7 @@ def main():
                 })
 
         tau_by_n[n_obs] = {
-            "nll": nll,
+            "nll": _compute_nll(params, obs_list, lookup),
             "grum": {
                 "delta": params.delta.cpu().tolist(),
                 "interaction": params.interaction.cpu().tolist()
@@ -257,7 +255,10 @@ def main():
             fit_bt=True
         )
         
-        tau_by_n[n_obs]["bt"] = {"delta": bt_fit.params.delta.cpu().tolist()}
+        tau_by_n[n_obs]["bt"] = {
+            "nll": _compute_nll(bt_fit.params, obs_list, lookup),
+            "beta": bt_fit.params.delta.cpu().tolist()
+            }
         if n_obs > 1: pbar.update(1)
 
     import itertools
