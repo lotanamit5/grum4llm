@@ -294,6 +294,8 @@ def main():
         "pca_dim": pca_dim,
         "prompts": prompts_by_agent_id,         # Full prompt map for reconstruction
         "alternatives": alternative_texts,       # Alternative id -> name map
+        "agent_features": {aid: x[i].tolist() for i, aid in enumerate(agent_ids)}, # Captured directly in engine
+        "alternative_features": {a.alternative_id: a.features.cpu().tolist() for a in alternatives},
         "query_log": query_log,                  # Per-step: prompt, pair, answer
         "history": tau_by_n,                     # Per-step: NLL, GRUM params, BT params
         "timing": {"total_seconds": t1 - t0},
