@@ -10,4 +10,4 @@ criterion: random
 model_id: Qwen/Qwen2.5-0.5B
 embedding_method: hidden_state_pca
 trial_id: run_009_criterion_random_model_id_Qwen-Qwen2.5-0.5B_embedding_method_hidden_state_pca
-exp_dir: /home/lotan.amit/grum4llm/results/llm/llm_colors-20260326-114531
+exp_dir: /home/lotan.amit/grum4llm/results/llm/llm_colors-20260331-113549

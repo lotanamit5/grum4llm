@@ -10,4 +10,4 @@ criterion: personalized
 model_id: Qwen/Qwen2.5-0.5B-Instruct
 embedding_method: hidden_state_pca
 trial_id: run_007_criterion_personalized_model_id_Qwen-Qwen2.5-0.5B-Instruct_embedding_method_hidden_state_pca
-exp_dir: /home/lotan.amit/grum4llm/results/llm/llm_colors-20260326-114531
+exp_dir: /home/lotan.amit/grum4llm/results/llm/llm_colors-20260331-113549
