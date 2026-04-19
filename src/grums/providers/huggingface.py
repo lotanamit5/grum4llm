@@ -242,3 +242,107 @@ class HuggingFaceChoiceProvider(HuggingFaceProvider):
             winner_id=winner_id,
             loser_id=loser_id,
         )
+
+class HuggingFaceBradleyTerryProvider(HuggingFaceProvider):
+    """
+    HuggingFace provider for probabilistic pairwise preference elicitation.
+    Computes sequence loss summing over the choice text, applying a
+    softmax over choice scores to probabilistically sample the winner
+    proportional to the Bradley-Terry formula.
+    """
+
+    def __init__(
+        self,
+        model: Any,
+        tokenizer: Any,
+        prompts_by_agent_id: dict[str, str],
+        alternative_texts: dict[int, str] | None = None,
+        temperature: float = 1.0,
+    ) -> None:
+        super().__init__(model, tokenizer, prompts_by_agent_id, alternative_texts)
+        self.temperature = temperature
+
+    def _score_text(self, base_prompt: str, choice_text: str) -> float:
+        """Score a choice by the negative cross-entropy sum of the choice tokens."""
+        import torch
+        
+        full_text = f"{base_prompt}{choice_text}"
+        
+        if getattr(self._tokenizer, "chat_template", None) is not None:
+            # Reconstruct the full message and the base_prompt up to the point of choice insertion
+            msg_full = [{"role": "user", "content": full_text}]
+            msg_base = [{"role": "user", "content": base_prompt}]
+            full_formatted = self._tokenizer.apply_chat_template(msg_full, tokenize=False)
+            base_formatted = self._tokenizer.apply_chat_template(msg_base, tokenize=False)
+        else:
+            full_formatted = full_text
+            base_formatted = base_prompt
+            
+        inputs = self._tokenizer(full_formatted, return_tensors="pt")
+        input_ids = inputs.input_ids.to(self._model.device)
+        
+        # Determine the length of the base prompt to mask the targets
+        base_inputs = self._tokenizer(base_formatted, return_tensors="pt")
+        prompt_len = base_inputs.input_ids.shape[1]
+        
+        with torch.no_grad():
+            outputs = self._model(input_ids)
+            logits = outputs.logits
+            
+        # Shift so that tokens < n predict n
+        shift_logits = logits[..., :-1, :].contiguous()
+        shift_labels = input_ids[..., 1:].contiguous()
+        
+        # Mask everything before prompt length
+        labels = shift_labels.clone()
+        if prompt_len > 1:
+            labels[0, :prompt_len - 1] = -100
+            
+        loss_fct = torch.nn.CrossEntropyLoss(reduction="sum")
+        loss = loss_fct(shift_logits.view(-1, shift_logits.size(-1)), labels.view(-1))
+        
+        return -loss.item()
+
+    def query_pairwise(
+        self,
+        agent: AgentRecord,
+        alt_a: AlternativeRecord,
+        alt_b: AlternativeRecord,
+    ) -> PairwiseObservation:
+        """Elicit a pairwise comparison by probabilistically sampling the winner."""
+        import random
+        import math
+        
+        if agent.agent_id not in self._prompts_by_agent_id:
+            raise KeyError(f"No prompt defined for agent_id: {agent.agent_id!r}")
+            
+        template = self._prompts_by_agent_id[agent.agent_id]
+        text_a = self._alternative_texts.get(alt_a.alternative_id, str(alt_a.alternative_id))
+        text_b = self._alternative_texts.get(alt_b.alternative_id, str(alt_b.alternative_id))
+        
+        def get_score(prompt_a, prompt_b, choice_text):
+            t1 = prompt_a.format(A=text_a, B=text_b) if "{A}" in prompt_a else f"{prompt_a}{choice_text}"
+            t2 = prompt_b.format(A=text_b, B=text_a) if "{A}" in prompt_b else f"{prompt_b}{choice_text}"
+            
+            s1 = self._score_text(t1, choice_text)
+            s2 = self._score_text(t2, choice_text)
+            return (s1 + s2) / 2.0
+
+        score_a = get_score(template, template, text_a)
+        score_b = get_score(template, template, text_b)
+        
+        # Bradley-Terry probabilistic sampling
+        max_s = max(score_a, score_b)
+        exp_a = math.exp((score_a - max_s) / self.temperature)
+        exp_b = math.exp((score_b - max_s) / self.temperature)
+        prob_a = exp_a / (exp_a + exp_b)
+        
+        winner_id = alt_a.alternative_id if random.random() < prob_a else alt_b.alternative_id
+        loser_id = alt_b.alternative_id if winner_id == alt_a.alternative_id else alt_a.alternative_id
+        
+        return PairwiseObservation(
+            agent_id=agent.agent_id,
+            winner_id=winner_id,
+            loser_id=loser_id,
+        )
+

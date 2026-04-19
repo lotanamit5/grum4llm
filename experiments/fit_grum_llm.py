@@ -56,8 +56,10 @@ def main():
     seed = cfg.get("seed", 42)
     pca_dim = cfg.get("pca_dim", 8)
     embedding_method = cfg.get("embedding_method", "hidden_state_pca")
-    provider_method = cfg.get("provider", {}).get("method", "perplexity")
+    n_test_queries = cfg.get("n_test_queries", 20)
+    provider_method = cfg.get("provider", {}).get("method", "bradley_terry")
     provider_labels = cfg.get("provider", {}).get("labels", ("1", "2"))
+    provider_temp = cfg.get("provider", {}).get("temperature", 1.0)
     
     mcem_config = utils.get_mcem_config(cfg.get("mcem", {}))
     device = utils.get_torch_device(cfg.get("device", "auto"))
@@ -121,7 +123,7 @@ def main():
         from transformers import AutoModelForCausalLM, AutoTokenizer
         print(f"Loading model: {model_id}")
         tokenizer = AutoTokenizer.from_pretrained(model_id)
-        if provider_method == "perplexity" or embedding_method == "hidden_state_pca":
+        if provider_method in ["perplexity", "bradley_terry"] or embedding_method == "hidden_state_pca":
             model = AutoModelForCausalLM.from_pretrained(
                 model_id, 
                 device_map="auto", 
@@ -160,7 +162,8 @@ def main():
         model_id=model_id,
         device=device.type,
         prompts_by_agent_id=prompts_by_agent_id,
-        alternative_texts=alternative_texts
+        alternative_texts=alternative_texts,
+        temperature=provider_temp
     )
 
     # 5. Elicitation Setup
@@ -187,6 +190,24 @@ def main():
     # Initial seed observation
     seed_obs = provider.query_pairwise(agents[0], alternatives[0], alternatives[1])
     
+    # 5.5 Elicit Test Set
+    import itertools
+    import random
+    candidate_designs = []
+    for agent in agents[1:]:
+        for alt_a, alt_b in itertools.combinations(alternatives, 2):
+            candidate_designs.append(PairwiseDesign(agent, alt_a, alt_b))
+            
+    test_observations = []
+    if n_test_queries > 0 and len(candidate_designs) > n_test_queries:
+        print(f"       Collecting {n_test_queries} uniform test queries...")
+        rng_shuffle = random.Random(seed)
+        rng_shuffle.shuffle(candidate_designs)
+        test_designs = candidate_designs[-n_test_queries:]
+        candidate_designs = candidate_designs[:-n_test_queries]
+        for design in tqdm(test_designs, desc="Test Queries"):
+            test_observations.append(provider.query_pairwise(design.agent, design.alt_a, design.alt_b))
+            
     # 6. Run Engine
     tau_by_n = {}
     query_log = []  # Records each chosen query and its answer
@@ -196,11 +217,12 @@ def main():
         [a.features for a in sorted(alternatives, key=lambda a: a.alternative_id)]
     ).to(device).to(torch.float64)
 
-    def _compute_nll(params: GRUMParameters, obs_list: list[Observation], lookup: dict[str, AgentRecord]) -> float:
-        """Compute mean NLL across all pairwise observations using Gaussian pairwise probability."""
+    def _compute_metrics(params: GRUMParameters, obs_list: list[Observation], lookup: dict[str, AgentRecord]) -> tuple[float, float]:
+        """Compute mean NLL and Predictive Accuracy across all pairwise observations."""
         import math
         sigma = mcem_config.sigma
         total_nll = 0.0
+        correct_count = 0
         count = 0
         for obs in obs_list:
             if not hasattr(obs, "winner_id"):
@@ -212,12 +234,16 @@ def main():
             mu = (x @ params.interaction.to(device).to(torch.float64) @ alt_features_sorted.T + params.delta.to(device).to(torch.float64)).squeeze(0)  # (m,)
             mu_w = mu[obs.winner_id].item()
             mu_l = mu[obs.loser_id].item()
+            if mu_w > mu_l:
+                correct_count += 1
             # P(winner > loser) = Phi((mu_w - mu_l) / (sigma * sqrt(2)))
             p = 0.5 * (1.0 + math.erf((mu_w - mu_l) / (sigma * math.sqrt(2.0))))
             p = max(p, 1e-10)
             total_nll += -math.log(p)
             count += 1
-        return total_nll / count if count > 0 else float("nan")
+        nll = total_nll / count if count > 0 else float("nan")
+        acc = correct_count / count if count > 0 else float("nan")
+        return nll, acc
 
     def _on_after_map(n_obs: int, params: GRUMParameters, obs_list: list[Observation], lookup: dict[str, AgentRecord]) -> None:
         # Record the latest observation if this is a new step (n_obs > 1 means a new obs was added)
@@ -236,16 +262,34 @@ def main():
                     "winner": alternative_texts.get(winner_id, str(winner_id)),
                 })
 
+        from grums.inference.fisher import observed_fisher_information
+
+        full_lookup = {a.agent_id: a for a in agents}
+
+        train_nll, train_acc = _compute_metrics(params, obs_list, full_lookup)
+        test_nll, test_acc = _compute_metrics(params, test_observations, full_lookup) if test_observations else (float("nan"), float("nan"))
+        
+        aligned_agents = [lookup[o.agent_id] for o in obs_list]
+        curr_agent_features = torch.vstack([a.features for a in aligned_agents]).to(device).to(torch.float64)
+
+        try:
+            fim = observed_fisher_information(params, curr_agent_features, alt_features_sorted, mcem_config.sigma)
+            cov_matrix = torch.linalg.pinv(fim)
+            variances = torch.diag(cov_matrix).cpu().tolist()
+        except Exception:
+            variances = []
+            
         tau_by_n[n_obs] = {
-            "nll": _compute_nll(params, obs_list, lookup),
+            "nll": train_nll,
+            "accuracy": train_acc,
+            "test_nll": test_nll,
+            "test_accuracy": test_acc,
+            "variances": variances,
             "grum": {
                 "delta": params.delta.cpu().tolist(),
                 "interaction": params.interaction.cpu().tolist()
             }
         }
-        
-        aligned_agents = [lookup[o.agent_id] for o in obs_list]
-        curr_agent_features = torch.vstack([a.features for a in aligned_agents]).to(device).to(torch.float64)
         
         bt_fit = engine.inference.fit_map(
             initial_params=init_params,
@@ -255,17 +299,19 @@ def main():
             fit_bt=True
         )
         
+        bt_train_nll, bt_train_acc = _compute_metrics(bt_fit.params, obs_list, full_lookup)
+        bt_test_nll, bt_test_acc = _compute_metrics(bt_fit.params, test_observations, full_lookup) if test_observations else (float("nan"), float("nan"))
+        
         tau_by_n[n_obs]["bt"] = {
-            "nll": _compute_nll(bt_fit.params, obs_list, lookup),
+            "nll": bt_train_nll,
+            "accuracy": bt_train_acc,
+            "test_nll": bt_test_nll,
+            "test_accuracy": bt_test_acc,
             "beta": bt_fit.params.delta.cpu().tolist()
-            }
+        }
         if n_obs > 1: pbar.update(1)
 
-    import itertools
-    candidate_designs = []
-    for agent in agents[1:]:
-        for alt_a, alt_b in itertools.combinations(alternatives, 2):
-            candidate_designs.append(PairwiseDesign(agent, alt_a, alt_b))
+
 
     engine = AdaptiveElicitationEngine(criterion=criterion, mcem_config=mcem_config)
     
